@@ -2,6 +2,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type Row } from "./api";
 import { VmScreen } from "./VmScreen";
 import { E2E_MARKERS, elementMarkers, isActive, phaseSummary, runStatusLabel } from "./e2eRun";
+import { formatOffset, phaseMoments, replayBounds, replayStates, type Bounds } from "./replay";
+
+export type ReplayRequest = { runId: string; nonce: number };
+export type ScreenView = { runId: string; active: boolean; focusPhase: string | null; at: number | null };
+type Replay = { t: number; playing: boolean; speed: number; frames: Row[]; bounds: Bounds };
+const SPEEDS = [1, 5, 10, 30, 60];
 
 type Props = {
   workflow: Row;
@@ -9,22 +15,27 @@ type Props = {
   onError: (message: string) => void;
   onOpenReport?: (launchId: string) => void;
   /** Shows the machine screen of the selected run next to the diagram (null hides it). */
-  onScreen?: (screen: { runId: string; active: boolean; focusPhase: string | null } | null) => void;
+  onScreen?: (screen: ScreenView | null) => void;
+  /** Open this run and replay it straight away (from the list of launches). */
+  replayRequest?: ReplayRequest | null;
 };
 
 /** Runs the end-to-end test bound to a published process and paints its progress on the diagram. */
-export function E2ePanel({ workflow, viewer, onError, onOpenReport, onScreen }: Props) {
+export function E2ePanel({ workflow, viewer, onError, onOpenReport, onScreen, replayRequest }: Props) {
   const versionId = workflow.version.id;
   const [runs, setRuns] = useState<Row[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [run, setRun] = useState<Row | undefined>();
   const [lines, setLines] = useState<string[]>([]);
   const [focusPhase, setFocusPhase] = useState<string | null>(null);
+  const [replay, setReplay] = useState<Replay | null>(null);
+  const pendingReplay = useRef<string | null>(replayRequest?.runId || null);
   const runId = run?.id;
   const runActive = isActive(run);
+  const replayAt = replay ? replay.t : null;
   useEffect(() => {
-    onScreen?.(runId ? { runId, active: runActive, focusPhase } : null);
-  }, [onScreen, runId, runActive, focusPhase]);
+    onScreen?.(runId ? { runId, active: runActive, focusPhase, at: replayAt } : null);
+  }, [onScreen, runId, runActive, focusPhase, replayAt]);
   useEffect(() => () => onScreen?.(null), [onScreen]);
   const next = useRef(0);
   const painted = useRef<string[]>([]);
@@ -32,7 +43,8 @@ export function E2ePanel({ workflow, viewer, onError, onOpenReport, onScreen }: 
   const refreshList = useCallback(async () => {
     const list = await api.e2eRuns(versionId);
     setRuns(list);
-    setSelectedId((current) => current || list[0]?.id || null);
+    const wanted = pendingReplay.current && list.some((item) => item.id === pendingReplay.current) ? pendingReplay.current : null;
+    setSelectedId((current) => wanted || current || list[0]?.id || null);
   }, [versionId]);
 
   useEffect(() => {
@@ -59,15 +71,81 @@ export function E2ePanel({ workflow, viewer, onError, onOpenReport, onScreen }: 
     return () => { alive = false; window.clearTimeout(timer); };
   }, [selectedId, refreshList, onError]);
 
+  // While replaying, the run is shown as it was at the replayed moment.
+  const shown = run && replay ? {
+    ...run,
+    states: replayStates(run, replay.frames, replay.t, replay.bounds),
+    status: replay.t >= replay.bounds.end ? run.status : "running",
+  } : run;
+
+  const startReplay = useCallback(async (target: Row) => {
+    try {
+      const frames = await api.e2eFrames(target.id);
+      const bounds = replayBounds(target, frames);
+      if (!bounds) { onError("Для цього прогону немає часових даних для відтворення"); return; }
+      setReplay({ t: bounds.start, playing: true, speed: 10, frames, bounds });
+    } catch (error) {
+      onError(String(error));
+    }
+  }, [onError]);
+
+  useEffect(() => {
+    // Opened from a list of launches: replay as soon as the run is loaded.
+    if (run && pendingReplay.current === run.id && !isActive(run)) {
+      pendingReplay.current = null;
+      startReplay(run);
+    }
+  }, [run, startReplay]);
+
+  useEffect(() => {
+    if (!replay?.playing) return;
+    const timer = window.setInterval(() => setReplay((current) => {
+      if (!current) return current;
+      const t = Math.min(current.bounds.end, current.t + 250 * current.speed);
+      return { ...current, t, playing: t < current.bounds.end };
+    }), 250);
+    return () => window.clearInterval(timer);
+  }, [replay?.playing]);
+
+  useEffect(() => setReplay(null), [selectedId]);
+  useEffect(() => {
+    if (!replayRequest) return;
+    pendingReplay.current = replayRequest.runId;
+    if (run?.id === replayRequest.runId && !isActive(run)) { pendingReplay.current = null; startReplay(run); }
+    else setSelectedId(replayRequest.runId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [replayRequest?.nonce]);
+
+  // The slider moves in 0.5 s steps and may stop just short of the end: snap to it then.
+  const seek = (t: number) => setReplay((current) => current && {
+    ...current,
+    t: current.bounds.end - t < 600 ? current.bounds.end : Math.max(current.bounds.start, t),
+  });
+  const moments = replay && run ? phaseMoments(run, replay.frames) : [];
+  const jumpToPhase = (phase: string) => {
+    const moment = moments.find((item) => item.phase === phase);
+    if (moment) seek(moment.t);
+  };
+  const nextPhase = () => {
+    if (!replay) return;
+    const moment = moments.find((item) => item.t > replay.t + 500);
+    seek(moment ? moment.t : replay.bounds.end);
+  };
+  const togglePlay = () => setReplay((current) => {
+    if (!current) return current;
+    if (current.playing) return { ...current, playing: false };
+    return { ...current, playing: true, t: current.t >= current.bounds.end ? current.bounds.start : current.t };
+  });
+
   useEffect(() => {
     if (!viewer) return;
     const canvas = viewer.get("canvas");
     const registry = viewer.get("elementRegistry");
     for (const id of painted.current) for (const marker of E2E_MARKERS) canvas.removeMarker(id, marker);
-    const markers = elementMarkers(run, workflow.nodes);
+    const markers = elementMarkers(shown, workflow.nodes);
     painted.current = Object.keys(markers).filter((id) => registry.get(id));
     for (const id of painted.current) canvas.addMarker(id, markers[id]);
-  }, [viewer, run, workflow.nodes]);
+  }, [viewer, shown, workflow.nodes]);
 
   const start = async () => {
     try {
@@ -90,9 +168,20 @@ export function E2ePanel({ workflow, viewer, onError, onOpenReport, onScreen }: 
       {isActive(run) ? <button onClick={stop} disabled={run?.stop_requested}>{run?.stop_requested ? "Зупиняється…" : "Зупинити"}</button>
         : <button onClick={start} disabled={!workflow.test.covered || !!activeRun}>Запустити тест</button>}
     </header>
-    <div className={`e2e-status ${run?.status || "none"}`}>{runStatusLabel(run)}{run ? ` · ${phaseSummary(run)}` : ""}</div>
-    {!!run?.states?.length && <ol className="e2e-phases">
-      {run.states.map((item: Row) => <li key={item.phase} className={`e2e-${item.state}`} title={item.detail || item.evidence || "Показати екран VM у цій фазі"} onClick={() => setFocusPhase(item.phase)}>
+    <div className={`e2e-status ${shown?.status || "none"}`}>{replay ? "Відтворення · " : ""}{runStatusLabel(shown)}{shown ? ` · ${phaseSummary(shown)}` : ""}</div>
+    {replay && <div className="replay-controls">
+      <button title="На початок" onClick={() => seek(replay.bounds.start)}>⏮</button>
+      <button title={replay.playing ? "Пауза" : "Програти"} onClick={togglePlay}>{replay.playing ? "⏸" : "▶"}</button>
+      <button title="Наступна фаза" onClick={nextPhase}>⏭</button>
+      <select value={replay.speed} title="Швидкість відтворення" onChange={(event) => setReplay({ ...replay, speed: Number(event.target.value) })}>
+        {SPEEDS.map((speed) => <option key={speed} value={speed}>{speed}×</option>)}
+      </select>
+      <input type="range" min={replay.bounds.start} max={replay.bounds.end} step={500} value={replay.t} onChange={(event) => seek(Number(event.target.value))} />
+      <span>{formatOffset(replay.t, replay.bounds)} / {formatOffset(replay.bounds.end, replay.bounds)}</span>
+      <button title="Вийти з відтворення" onClick={() => setReplay(null)}>✕</button>
+    </div>}
+    {!!shown?.states?.length && <ol className="e2e-phases">
+      {shown.states.map((item: Row) => <li key={item.phase} className={`e2e-${item.state}`} title={item.detail || item.evidence || (replay ? "Перейти до цієї фази" : "Показати екран VM у цій фазі")} onClick={() => replay ? jumpToPhase(item.phase) : setFocusPhase(item.phase)}>
         {item.phase}{item.inferred && item.state === "passed" ? " ·" : ""}
       </li>)}
     </ol>}
@@ -100,8 +189,15 @@ export function E2ePanel({ workflow, viewer, onError, onOpenReport, onScreen }: 
     {lines.length > 0 && <pre className="e2e-log">{lines.slice(-40).join("\n")}</pre>}
     {run?.report_launch_id && onOpenReport && <button className="link" onClick={() => onOpenReport(run.report_launch_id)}>Відкрити звіт прогону</button>}
     {run?.folder && <span className="e2e-folder">Тека запуску: {run.folder}</span>}
-    {runs.length > 1 && <select value={selectedId || ""} onChange={(event) => setSelectedId(event.target.value)}>
-      {runs.map((item) => <option key={item.id} value={item.id}>{new Date(item.created_at).toLocaleString("uk-UA")} · {runStatusLabel(item)}</option>)}
-    </select>}
+    {runs.length > 0 && <ul className="e2e-runs">
+      {runs.map((item) => <li key={item.id} className={item.id === selectedId ? "selected" : ""}>
+        <button className="link" onClick={() => setSelectedId(item.id)}>{new Date(item.created_at).toLocaleString("uk-UA")}</button>
+        <span className={`e2e-status ${item.status}`}>{runStatusLabel(item)}</span>
+        {!isActive(item) && <button title="Програти виконаний тест: фази на BPMN і екран VM у часі" onClick={() => {
+          if (item.id === selectedId && run) startReplay(run);
+          else { pendingReplay.current = item.id; setSelectedId(item.id); }
+        }}>▶ Програти</button>}
+      </li>)}
+    </ul>}
   </aside>;
 }

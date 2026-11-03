@@ -8,7 +8,7 @@ import {
 
 type Props = {
   initialLaunchId?: string | null;
-  onOpenProcess: (binding: string) => void;
+  onOpenProcess: (binding: string, replayRunId?: string) => void;
   onError: (message: string) => void;
 };
 
@@ -67,7 +67,8 @@ export function ReportsView({ initialLaunchId, onOpenProcess, onError }: Props) 
 
     {tab === "overview" && overview && <Overview overview={overview} onCategory={(name) => { setCategory(name); setTab("categories"); }} onLaunch={(id) => setLaunchId(id)} />}
 
-    {tab === "launch" && <LaunchPanel onError={onError} onOpenLaunch={(id) => { setLaunchId(id); setTab("suites"); }} />}
+    {tab === "launch" && <LaunchPanel onError={onError} onOpenLaunch={(id) => { setLaunchId(id); setTab("suites"); }}
+      onReplayProcess={(binding, runId) => onOpenProcess(binding, runId)} />}
 
     {(tab === "suites" || tab === "categories") && <div className="reports-body">
       <section className="reports-list">

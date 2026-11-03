@@ -7,7 +7,7 @@ import "bpmn-js/dist/assets/bpmn-font/css/bpmn.css";
 import { api, type Row } from "./api";
 import { needsSvgRepair, svgStatusLabel } from "./bpmnSvg";
 import { acceptsTestPhase, phaseOptions } from "./testBindings";
-import { E2ePanel } from "./E2ePanel";
+import { E2ePanel, type ReplayRequest, type ScreenView } from "./E2ePanel";
 import { VmScreen } from "./VmScreen";
 
 type Props = {
@@ -17,6 +17,8 @@ type Props = {
   onValidation: (validation: Row) => void;
   onError: (message: string) => void;
   onOpenReport?: (launchId: string) => void;
+  /** Replay this finished run as soon as the process opens. */
+  replayRequest?: ReplayRequest | null;
 };
 
 const EVENT_OPTIONS: Record<string, { value: string; label: string; definition?: string }[]> = {
@@ -71,7 +73,7 @@ function eventKind(element: any): string {
   } as Record<string, string>)[definition] || "none";
 }
 
-export function BpmnEditor({ workflow, immutable, onSaved, onValidation, onError, onOpenReport }: Props) {
+export function BpmnEditor({ workflow, immutable, onSaved, onValidation, onError, onOpenReport, replayRequest }: Props) {
   const container = useRef<HTMLDivElement | null>(null);
   const editor = useRef<any>(null);
   const [selected, setSelected] = useState<any>(null);
@@ -82,10 +84,11 @@ export function BpmnEditor({ workflow, immutable, onSaved, onValidation, onError
   const [bindings, setBindings] = useState<Row[]>([]);
   const [, setProcessRevision] = useState(0);
   const [ready, setReady] = useState(false);
-  const [screen, setScreen] = useState<{ runId: string; active: boolean; focusPhase: string | null } | null>(null);
+  const [screen, setScreen] = useState<ScreenView | null>(null);
   const [screenOpen, setScreenOpen] = useState(false);
   // A running test opens the screen by itself; for a finished run a phase click or the button does.
-  useEffect(() => { if (screen?.active || screen?.focusPhase) setScreenOpen(true); }, [screen?.active, screen?.focusPhase]);
+  const replaying = screen?.at != null;
+  useEffect(() => { if (screen?.active || screen?.focusPhase || replaying) setScreenOpen(true); }, [screen?.active, screen?.focusPhase, replaying]);
   const showScreen = !!screen && screenOpen;
   useEffect(() => {
     // The diagram shares the field with the machine screen: refit it whenever the split changes.
@@ -202,7 +205,7 @@ export function BpmnEditor({ workflow, immutable, onSaved, onValidation, onError
   return <div className={`native-bpmn-editor ${immutable ? "readonly" : "editable"} ${showScreen ? "with-screen" : ""}`}>
     <div className="native-bpmn-canvas" ref={container} />
     {showScreen && screen && <section className="bpmn-screen-pane">
-      <VmScreen runId={screen.runId} active={screen.active} focusPhase={screen.focusPhase} />
+      <VmScreen runId={screen.runId} active={screen.active} focusPhase={screen.focusPhase} at={screen.at} />
       <button className="link" onClick={() => setScreenOpen(false)}>Сховати екран VM</button>
     </section>}
     {screen && !screenOpen && <button className="bpmn-screen-show" onClick={() => setScreenOpen(true)}>Показати екран VM</button>}
@@ -236,7 +239,7 @@ export function BpmnEditor({ workflow, immutable, onSaved, onValidation, onError
       </ul>}
       {workflow.test && dirty && <span>Покриття оновиться після збереження.</span>}
     </aside>}
-    {immutable && ready && workflow.test && <E2ePanel workflow={workflow} viewer={editor.current} onError={onError} onOpenReport={onOpenReport} onScreen={setScreen} />}
+    {immutable && ready && workflow.test && <E2ePanel workflow={workflow} viewer={editor.current} onError={onError} onOpenReport={onOpenReport} onScreen={setScreen} replayRequest={replayRequest} />}
     <datalist id="bpmn-test-phases">{phaseOptions(bindings, processObject()?.$attrs?.["aftertime:testBinding"]).map((phase) => <option value={phase} key={phase} />)}</datalist>
   </div>;
 }

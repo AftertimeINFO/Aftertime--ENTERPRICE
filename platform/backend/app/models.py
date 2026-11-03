@@ -456,6 +456,8 @@ class LabE2eRun(Base):
     kind: Mapped[str] = mapped_column(String(20), default="binding")
     target: Mapped[dict] = mapped_column(JSONB, default=dict)
     progress: Mapped[dict | None] = mapped_column(JSONB)
+    # Phase state changes with time, to replay the run: [{"t", "phase", "state"} | {"t", "status"}].
+    timeline: Mapped[list] = mapped_column(JSONB, default=list)
     binding: Mapped[str] = mapped_column(String(120))
     status: Mapped[str] = mapped_column(String(20), default="queued", index=True)
     center_job_id: Mapped[str | None] = mapped_column(String(80))

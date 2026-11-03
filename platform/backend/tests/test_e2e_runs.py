@@ -133,3 +133,21 @@ async def test_frames_record_the_running_phase_and_skip_identical_screens(publis
         with pytest.raises(HTTPException):
             await add_frame(run["id"], Body(b"not a jpeg", "2026-11-04T10:00:09+00:00"), db)
         stop_e2e_run(run["id"], db)
+
+
+def test_timeline_records_each_phase_change_once(published):
+    with SessionLocal() as db:
+        run = start_e2e_run(published, db)
+        e2e_run_events(run["id"], {"events": [
+            {"type": "status", "status": "running"},
+            {"type": "phase", "phase": "order", "state": "active"},
+            {"type": "phase", "phase": "order", "state": "active"},
+            {"type": "phase", "phase": "order", "state": "passed"},
+            {"type": "finished", "status": "failed", "states": [
+                {"phase": "order", "state": "passed"}, {"phase": "issue", "state": "failed"}]},
+        ]}, db)
+        timeline = e2e_run(run["id"], 0, db)["timeline"]
+        assert [item.get("status") or f"{item['phase']}={item['state']}" for item in timeline] == [
+            "running", "order=active", "order=passed", "issue=failed",
+        ]
+        assert all(item["t"] for item in timeline)

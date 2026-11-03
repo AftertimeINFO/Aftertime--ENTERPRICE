@@ -47,6 +47,7 @@ def _summary(run: LabE2eRun) -> dict[str, Any]:
         "claimed_at": run.claimed_at,
         "finished_at": run.finished_at,
         "log_lines": len(run.log),
+        "timeline": run.timeline or [],
     }
 
 
@@ -208,9 +209,32 @@ def _merge_states(current: list[dict[str, Any]], updates: list[dict[str, Any]]) 
     return [by_phase[item["phase"]] for item in current]
 
 
+def _record_changes(run: LabE2eRun, before: list[dict[str, Any]], now: datetime) -> None:
+    """Append every phase whose state changed to the run timeline, for replaying the run later."""
+    previous = {item["phase"]: item.get("state") for item in before}
+    changed = [
+        {"t": now.isoformat(), "phase": item["phase"], "state": item.get("state")}
+        for item in run.states
+        if previous.get(item["phase"]) != item.get("state")
+    ]
+    if changed:
+        run.timeline = (run.timeline or []) + changed
+
+
 def apply_event(run: LabE2eRun, event: dict[str, Any]) -> None:
     kind = event.get("type")
     now = datetime.now(UTC)
+    before = [dict(item) for item in run.states or []]
+    _apply(run, event, kind, now)
+    if kind in ("states", "phase", "finished"):
+        _record_changes(run, before, now)
+    if kind == "status" and event.get("status") == "running" and not any(
+        item.get("status") == "running" for item in run.timeline or []
+    ):
+        run.timeline = (run.timeline or []) + [{"t": now.isoformat(), "status": "running"}]
+
+
+def _apply(run: LabE2eRun, event: dict[str, Any], kind: Any, now: datetime) -> None:
     if kind == "queued":
         run.center_job_id = event.get("job")
         run.queue_ahead = event.get("ahead")
