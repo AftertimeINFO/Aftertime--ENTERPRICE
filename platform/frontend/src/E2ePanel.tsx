@@ -5,7 +5,7 @@ import { E2E_MARKERS, elementMarkers, isActive, phaseSummary, runStatusLabel } f
 import { formatOffset, phaseMoments, replayBounds, replayStates, type Bounds } from "./replay";
 
 export type ReplayRequest = { runId: string; nonce: number };
-export type ScreenView = { runId: string; active: boolean; focusPhase: string | null; at: number | null };
+export type ScreenView = { runId: string; active: boolean; focusPhase: string | null; at: number | null; recording: Row | null };
 type Replay = { t: number; playing: boolean; speed: number; frames: Row[]; bounds: Bounds };
 const SPEEDS = [1, 5, 10, 30, 60];
 
@@ -34,8 +34,8 @@ export function E2ePanel({ workflow, viewer, onError, onOpenReport, onScreen, re
   const runActive = isActive(run);
   const replayAt = replay ? replay.t : null;
   useEffect(() => {
-    onScreen?.(runId ? { runId, active: runActive, focusPhase, at: replayAt } : null);
-  }, [onScreen, runId, runActive, focusPhase, replayAt]);
+    onScreen?.(runId ? { runId, active: runActive, focusPhase, at: replayAt, recording: run?.recording || null } : null);
+  }, [onScreen, runId, runActive, focusPhase, replayAt, run?.recording]);
   useEffect(() => () => onScreen?.(null), [onScreen]);
   const next = useRef(0);
   const painted = useRef<string[]>([]);
@@ -63,7 +63,8 @@ export function E2ePanel({ workflow, viewer, onError, onOpenReport, onScreen, re
       next.current = current.next;
       setRun(current);
       if (current.lines.length) setLines((old) => [...old, ...current.lines].slice(-300));
-      if (isActive(current)) timer = window.setTimeout(() => poll().catch(() => {}), 2000);
+      // Keep polling while the run goes on, and after it while its screen video is being packed.
+      if (isActive(current) || current.recording?.status === "packing") timer = window.setTimeout(() => poll().catch(() => {}), isActive(current) ? 2000 : 5000);
       else refreshList().catch(() => {});
     };
     let timer = 0;

@@ -4,6 +4,21 @@ import type { Row } from "./api";
 
 const ms = (value: string | undefined | null): number => (value ? new Date(value).getTime() : NaN);
 
+/** Start and end (ms) of the run's screen video, when it is packed. */
+export function recordingSpan(run: Row): number[] {
+  const recording = run.recording;
+  if (recording?.status !== "ready") return [];
+  const start = ms(recording.started_at);
+  return Number.isNaN(start) ? [] : [start, start + (recording.duration_ms || 0)];
+}
+
+/** Second of the screen video to show at moment ``t`` (ms), or null outside the video. */
+export function videoTime(run: Row, t: number): number | null {
+  const [start, end] = recordingSpan(run);
+  if (start === undefined || t < start || t > end) return null;
+  return (t - start) / 1000;
+}
+
 export type Bounds = { start: number; end: number };
 
 export function replayBounds(run: Row, frames: Row[]): Bounds | null {
@@ -12,6 +27,7 @@ export function replayBounds(run: Row, frames: Row[]): Bounds | null {
     ...frames.map((frame) => ms(frame.captured_at)),
     ms(run.claimed_at),
     ms(run.finished_at),
+    ...recordingSpan(run),
   ].filter((value) => !Number.isNaN(value));
   if (!times.length) return null;
   const start = Math.min(...times);

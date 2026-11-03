@@ -28,3 +28,21 @@ def test_recorder_does_nothing_when_capture_cannot_start():
     recorder.start()
     recorder.close()
     assert calls == ["start"]
+
+
+def test_recording_is_packed_and_sent_after_the_run():
+    recordings = []
+
+    def runner(command, action, env=None, timeout=60):
+        if action == "frame":
+            Path(env["BRIDGE_FRAME_OUT"]).write_bytes(b"\xff\xd8frame")
+        if action == "pack":
+            Path(env["BRIDGE_RECORDING_OUT"]).write_bytes(b"PK zip")
+        return True
+
+    recorder = ScreenRecorder("screen", lambda jpeg, at: None, every=0.01, runner=runner,
+                              send_recording=lambda path, started: recordings.append((path.read_bytes(), started)))
+    recorder.start()
+    recorder.close()
+    assert recordings and recordings[0][0] == b"PK zip"
+    assert recordings[0][1] == recorder.started_at and recorder.recorded

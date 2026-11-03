@@ -40,6 +40,7 @@ export const api = {
   startE2eRun: (version: string) => request<Row>(`/lab/workflows/${version}/e2e-runs`, json("POST")),
   e2eRun: (id: string, start = 0) => request<Row>(`/lab/e2e-runs/${id}?start=${start}`),
   e2eFrames: (id: string) => request<Row[]>(`/lab/e2e-runs/${id}/frames`),
+  e2eRecordingUrl: (runId: string) => `${API}/lab/e2e-runs/${encodeURIComponent(runId)}/recording.mp4`,
   e2eFrameUrl: (id: string) => `${API}/lab/e2e-frames/${encodeURIComponent(id)}`,
   stopE2eRun: (id: string) => request<Row>(`/lab/e2e-runs/${id}/stop`, json("POST")),
   reportLaunches: () => request<Row[]>("/lab/reports/launches"),

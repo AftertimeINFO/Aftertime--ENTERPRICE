@@ -205,7 +205,7 @@ export function BpmnEditor({ workflow, immutable, onSaved, onValidation, onError
   return <div className={`native-bpmn-editor ${immutable ? "readonly" : "editable"} ${showScreen ? "with-screen" : ""}`}>
     <div className="native-bpmn-canvas" ref={container} />
     {showScreen && screen && <section className="bpmn-screen-pane">
-      <VmScreen runId={screen.runId} active={screen.active} focusPhase={screen.focusPhase} at={screen.at} />
+      <VmScreen runId={screen.runId} active={screen.active} focusPhase={screen.focusPhase} at={screen.at} recording={screen.recording} />
       <button className="link" onClick={() => setScreenOpen(false)}>Сховати екран VM</button>
     </section>}
     {screen && !screenOpen && <button className="bpmn-screen-show" onClick={() => setScreenOpen(true)}>Показати екран VM</button>}

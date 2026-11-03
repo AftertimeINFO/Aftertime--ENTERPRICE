@@ -1,13 +1,30 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, type Row } from "./api";
 import { firstFrameOfPhase } from "./e2eRun";
-import { frameAt } from "./replay";
+import { frameAt, videoTime } from "./replay";
 
 /** ``at`` (ms) puts the screen under a replay: the frame on screen at that moment is shown. */
-type Props = { runId: string; active: boolean; focusPhase?: string | null; at?: number | null; autoplay?: boolean };
+type Props = {
+  runId: string;
+  active: boolean;
+  focusPhase?: string | null;
+  at?: number | null;
+  autoplay?: boolean;
+  /** The packed screen video of the run: when ready it replaces the still frames. */
+  recording?: Row | null;
+};
 
 /** What the machine under test showed during a run: live while it runs, a filmstrip afterwards. */
-export function VmScreen({ runId, active, focusPhase, at, autoplay }: Props) {
+export function VmScreen({ runId, active, focusPhase, at, autoplay, recording }: Props) {
+  const video = useRef<HTMLVideoElement | null>(null);
+  const hasVideo = !active && recording?.status === "ready";
+  const second = hasVideo && at != null ? videoTime({ recording }, at) : null;
+  useEffect(() => {
+    // Under a replay the video follows the replayed moment instead of playing on its own.
+    if (!video.current || second === null) return;
+    video.current.pause();
+    if (Math.abs(video.current.currentTime - second) > 0.2) video.current.currentTime = second;
+  }, [second]);
   const [frames, setFrames] = useState<Row[]>([]);
   const [index, setIndex] = useState<number | null>(null);
   const [large, setLarge] = useState(false);
@@ -46,7 +63,20 @@ export function VmScreen({ runId, active, focusPhase, at, autoplay }: Props) {
     if (found >= 0) setIndex(found);
   }, [focusPhase, frames]);
 
-  if (!frames.length) return active ? <div className="vm-screen empty">Екран VM: чекаю на перший кадр…</div> : null;
+  if (hasVideo) {
+    return <div className={`vm-screen ${large ? "large" : ""}`}>
+      <header>
+        <small>ЕКРАН VM · ВІДЕО{at != null ? " · ВІДТВОРЕННЯ" : ""}</small>
+        <span>{Math.round((recording.duration_ms || 0) / 1000)} с · {recording.frames} кадрів · {((recording.size || 0) / 1024 / 1024).toFixed(1)} МБ</span>
+        <button className="link" onClick={() => setLarge(!large)}>{large ? "менше" : "більше"}</button>
+      </header>
+      <video ref={video} src={api.e2eRecordingUrl(runId)} preload="auto" muted playsInline controls={at == null} />
+      {at != null && second === null && <span className="muted">Запис екрана в цю мить ще не йшов</span>}
+    </div>;
+  }
+  const packing = !active && recording?.status === "packing";
+  if (!frames.length) return active ? <div className="vm-screen empty">Екран VM: чекаю на перший кадр…</div>
+    : packing ? <div className="vm-screen empty">Відео екрана пакується у фоні…</div> : null;
   const replaying = at != null;
   const shown = replaying ? frameAt(frames, at) : index === null || index >= frames.length ? frames.length - 1 : index;
   if (shown < 0) return <div className="vm-screen empty">Екран VM: у цю мить кадр ще не знято</div>;
@@ -64,6 +94,8 @@ export function VmScreen({ runId, active, focusPhase, at, autoplay }: Props) {
       if (!playing && shown >= frames.length - 1) setIndex(0);
       setPlaying(!playing);
     }}>{playing ? "⏸ пауза" : "▶ програти кадри"}</button>}
+    {packing && <span className="muted">Відео екрана пакується у фоні; поки що — окремі кадри</span>}
+    {recording?.status === "failed" && <span className="muted">Відео не запаковано: {recording.error}</span>}
     <span className="muted">{shown + 1} з {frames.length} кадрів{active && index !== null ? " · " : ""}{active && index !== null && <button className="link" onClick={() => setIndex(null)}>наживо</button>}</span>
   </div>;
 }

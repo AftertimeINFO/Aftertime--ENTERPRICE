@@ -11,13 +11,14 @@ from typing import Any
 
 from hashlib import sha1
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response
 from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db import get_db
+from app.db import SessionLocal, get_db
 from app.models import CenterSnapshot, LabE2eFrame, LabE2eRun, LabWorkflowVersion, ReportLaunch
+from app.services.recordings import archive_path, pack, video_path
 from app.services.reports import reports_dir
 from app.services.test_bindings import load_bindings, phase_coverage
 
@@ -48,6 +49,7 @@ def _summary(run: LabE2eRun) -> dict[str, Any]:
         "finished_at": run.finished_at,
         "log_lines": len(run.log),
         "timeline": run.timeline or [],
+        "recording": run.recording,
     }
 
 
@@ -328,3 +330,71 @@ def frame_image(frame_id: str, db: Session = Depends(get_db)) -> FileResponse:
     if not path or not path.exists():
         raise HTTPException(404, "frame not found")
     return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
+
+
+RECORDING_LIMIT = 2 * 1024 * 1024 * 1024
+
+
+def pack_recording(run_id: str) -> None:
+    """Background job: zip of frames → MP4, then drop the live frames the video makes redundant."""
+    with SessionLocal() as db:
+        run = db.get(LabE2eRun, run_id)
+        if not run:
+            return
+        try:
+            result = pack(run_id)
+        except Exception as exc:  # the zip stays on disk, so packing can be retried
+            run.recording = {**(run.recording or {}), "status": "failed", "error": str(exc)[:500]}
+            db.commit()
+            return
+        run.recording = {**(run.recording or {}), "status": "ready", **result}
+        keep: set[str] = set()
+        kept_phases: set[str | None] = set()
+        rows = list(db.scalars(select(LabE2eFrame).where(LabE2eFrame.run_id == run_id).order_by(LabE2eFrame.captured_at)))
+        for row in rows:
+            # The first frame of each phase stays as its picture; the video holds the rest.
+            if row.phase not in kept_phases:
+                kept_phases.add(row.phase)
+                keep.add(row.id)
+        for row in rows:
+            if row.id not in keep:
+                _frame_path(run_id, row.id).unlink(missing_ok=True)
+                db.delete(row)
+        db.commit()
+
+
+@router.post("/e2e-runs/{run_id}/recording")
+async def add_recording(run_id: str, request: Request, background: BackgroundTasks, db: Session = Depends(get_db)) -> dict[str, Any]:
+    """The whole screen recording of a run (zip of frames named by ms); packed in the background."""
+    run = _get_run(db, run_id)
+    body = await request.body()
+    if not body or len(body) > RECORDING_LIMIT or not body.startswith(b"PK"):
+        raise HTTPException(422, "zip of JPEG frames expected")
+    target = archive_path(run.id)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(body)
+    run.recording = {"status": "packing", "started_at": request.headers.get("x-recording-started-at") or datetime.now(UTC).isoformat(),
+                     "archive_size": len(body)}
+    db.commit()
+    background.add_task(pack_recording, run.id)
+    return run.recording
+
+
+@router.post("/e2e-runs/{run_id}/recording/pack")
+def repack_recording(run_id: str, background: BackgroundTasks, db: Session = Depends(get_db)) -> dict[str, Any]:
+    """Pack again a recording whose packing failed or was interrupted."""
+    run = _get_run(db, run_id)
+    if not archive_path(run.id).exists():
+        raise HTTPException(404, "no recording waiting to be packed")
+    run.recording = {**(run.recording or {}), "status": "packing", "error": None}
+    db.commit()
+    background.add_task(pack_recording, run.id)
+    return run.recording
+
+
+@router.get("/e2e-runs/{run_id}/recording.mp4")
+def recording_video(run_id: str) -> FileResponse:
+    path = video_path(run_id)
+    if not path.exists():
+        raise HTTPException(404, "video not ready")
+    return FileResponse(path, media_type="video/mp4")

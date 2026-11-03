@@ -1793,3 +1793,4 @@ pre {
 .e2e-runs li .e2e-status { flex: 1; }
 .e2e-runs li > button:last-child { padding: 1px 6px; font-size: 10px; }
 .launch-history td button { padding: 1px 6px; font-size: 10px; }
+.vm-screen video { display: block; width: 100%; border: 1px solid var(--line); border-radius: 3px; background: #000; }

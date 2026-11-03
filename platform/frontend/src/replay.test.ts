@@ -54,3 +54,14 @@ describe("replaying a run", () => {
     expect(phaseMoments(run, frames).map((item) => item.phase)).toEqual(["order", "issue"]);
   });
 });
+
+describe("screen video under a replay", () => {
+  it("maps the replayed moment onto the packed video", async () => {
+    const { videoTime, replayBounds } = await import("./replay");
+    const recorded = { ...run, recording: { status: "ready", started_at: at(5), duration_ms: 40_000 } };
+    expect(videoTime(recorded, Date.parse(at(15)))).toBe(10);
+    expect(videoTime(recorded, Date.parse(at(2)))).toBeNull();
+    expect(videoTime({ ...recorded, recording: { status: "packing", started_at: at(5) } }, Date.parse(at(15)))).toBeNull();
+    expect(replayBounds(recorded, [])!.end).toBe(Date.parse(at(50)));
+  });
+});

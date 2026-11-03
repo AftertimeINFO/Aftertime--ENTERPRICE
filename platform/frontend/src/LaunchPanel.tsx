@@ -109,7 +109,7 @@ export function LaunchPanel({ onOpenLaunch, onError, onReplayProcess }: Props) {
             <li key={suite.id} className={suite.state}>{suite.title} <small>{suite.state}</small></li>)}</ol>
         </>}
         {viewId && <button className="link" onClick={() => setViewId(null)}>← до поточного запуску</button>}
-        <VmScreen runId={current.id} active={isActive(current)} autoplay={!!viewId} />
+        <VmScreen runId={current.id} active={isActive(current)} autoplay={!!viewId} recording={current.recording} />
         {lines.length > 0 && <pre className="e2e-log">{lines.slice(-60).join("\n")}</pre>}
         {!!current.report_launch_ids?.length && <div className="links">{current.report_launch_ids.map((id: string) =>
           <button key={id} className="link" onClick={() => onOpenLaunch(id)}>Звіт запуску</button>)}</div>}
