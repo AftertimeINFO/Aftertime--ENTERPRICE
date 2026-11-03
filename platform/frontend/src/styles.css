@@ -416,6 +416,11 @@ textarea {
 .bpmn-save-strip .svg-status.incomplete,
 .bpmn-save-strip .svg-status.missing { color: #f0c27a; }
 .bpmn-save-strip a { color: #9ec9ff; }
+.process-picker { max-width: 340px; }
+.test-coverage { display: grid; gap: 3px; margin: 0; padding: 0; list-style: none; font-size: 11px; }
+.test-coverage .covered { color: #8fd6b4; }
+.test-coverage .missing { color: #f08f7a; }
+.test-coverage .note { color: #f0c27a; }
 .bpmn-properties {
   position: absolute;
   top: 18px;

@@ -1,0 +1,9 @@
+{
+  "example-order": {
+    "title": "Приклад: оформлення та видача замовлення",
+    "phases": ["order", "issue", "return"],
+    "runner": {
+      "cases": ["example-order-case"]
+    }
+  }
+}

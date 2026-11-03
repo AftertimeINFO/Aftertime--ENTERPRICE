@@ -135,6 +135,13 @@ LEGACY_TO_TAG = {
 }
 
 
+TEST_PHASE_PREFIX = "test.phase."
+
+
+def phase_capability(phase: str) -> str:
+    return f"{TEST_PHASE_PREFIX}{phase}"
+
+
 @dataclass(frozen=True)
 class BpmnProjection:
     nodes: list[dict[str, Any]]
@@ -254,6 +261,11 @@ def parse_bpmn(xml: str) -> BpmnProjection:
                     config["condition"] = (condition.text or "").strip()
             target_ref = element.get(f"{{{AFTERTIME_NS}}}targetRef")
             capability = element.get(f"{{{AFTERTIME_NS}}}capability")
+            test_phase = element.get(f"{{{AFTERTIME_NS}}}testPhase")
+            if test_phase:
+                # An element bound to a test phase waits for that phase in a mirror run.
+                config["test_phase"] = test_phase
+                capability = capability or phase_capability(test_phase)
             if target_ref:
                 config["target_ref"] = target_ref
             if capability:

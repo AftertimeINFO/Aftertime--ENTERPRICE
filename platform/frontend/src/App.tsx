@@ -17,6 +17,7 @@ import {
 import "@xyflow/react/dist/style.css";
 import { api, type PortContract, type Row, type Workspace } from "./api";
 import { BpmnCollaboration, BpmnEditor } from "./BpmnEditor";
+import { processCatalog } from "./testBindings";
 import {
   EVENT_ACTION_LABELS,
   actionTargetKind,
@@ -762,6 +763,24 @@ export default function App() {
                   Опублікувати workflow
                 </button>
               </>
+            )}
+            {mode === "process" && w && (
+              <select
+                className="process-picker"
+                value={workflow?.version?.id || ""}
+                onChange={async (event) => {
+                  if (!event.target.value) return;
+                  setWorkflow(await api.workflow(event.target.value));
+                  setValidation(null);
+                }}
+              >
+                <option value="">Оберіть процес…</option>
+                {processCatalog(w.workflows).map((item) => (
+                  <option value={item.id} key={item.id}>
+                    {item.tested ? "✓ E2E · " : ""}{item.name} · v{item.version}
+                  </option>
+                ))}
+              </select>
             )}
             <span>{mode === "process" ? "BPMN 2.0 · " : ""}{immutable ? "Immutable snapshot · " : "Draft · "}{mode === "events" ? `${eventPrograms.length} програм · ${selectedProgram?.actions?.length || 0} дій` : `${nodes.length} вузлів · ${edges.length} зв’язків`}</span>
           </div>
