@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from sqlalchemy import text
 
 from app.db import SessionLocal
 from app.models import Entity, LabProject, ProcessModel, Relation, Route, Scenario, Source
@@ -181,6 +182,27 @@ def seed_participants() -> None:
     with SessionLocal() as db:
         seed_participant_process_pilots(db)
         db.commit()
+        mark_builtin_energy(db)
+
+
+def mark_builtin_energy(db) -> None:
+    """The energy model still seeded by the core belongs to the ``energy`` pack.
+
+    Processes bound to tests come from their own packs and are left alone.
+    """
+    if not db.get(LabProject, "model-lab-energy"):
+        return
+    db.execute(text(
+        "INSERT INTO lab_packs (id, title, version, description, source) VALUES "
+        "('energy', 'Енергосистема', 'builtin', 'Вбудована модель Model Lab: газ → ТЕС → мережа → споживач', 'core') "
+        "ON CONFLICT (id) DO NOTHING"
+    ))
+    db.execute(text("UPDATE lab_projects SET pack_id = 'energy' WHERE pack_id IS NULL"))
+    db.execute(text(
+        "UPDATE lab_workflows SET pack_id = 'energy' WHERE pack_id IS NULL AND id NOT IN ("
+        "SELECT workflow_id FROM lab_workflow_versions WHERE bpmn_xml LIKE '%aftertime:testBinding=%')"
+    ))
+    db.commit()
 
 
 if __name__ == "__main__":

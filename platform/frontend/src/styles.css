@@ -1737,3 +1737,5 @@ pre {
 .launch-history td { padding: 3px 8px 3px 0; border-bottom: 1px solid var(--line); }
 .test-row em.archived { border-color: var(--muted); color: var(--muted); }
 .archived-toggle { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; color: var(--muted); }
+.pack-picker { max-width: 200px; border-color: var(--cyan) !important; color: var(--cyan); }
+.mode-switch button:disabled { opacity: .35; cursor: not-allowed; }

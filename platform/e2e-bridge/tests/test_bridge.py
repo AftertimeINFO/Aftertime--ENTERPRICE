@@ -216,3 +216,43 @@ def test_center_client_speaks_the_control_center_api(center_server):
     assert center.stop("j1") is True
     assert ("POST", "/api/run", {"cases": ["case-a"], "title": "Aftertime · Видача"}) in received
     assert ("GET", "/api/job/j1?from=4", None) in received
+
+
+def test_bindings_come_from_packs_with_stand_overrides(tmp_path):
+    from e2e_bridge.runner import load_bindings
+
+    pack = tmp_path / "Aftertime-model-rental"
+    (pack / "e2e").mkdir(parents=True)
+    (pack / "aftertime-pack.json").write_text(json.dumps({"id": "rental", "bindings": "e2e/bindings.json"}), encoding="utf-8")
+    (pack / "e2e" / "bindings.json").write_text(json.dumps(
+        {"rental-issue": {"title": "Видача", "phases": ["order", "issue"], "runner": {"cases": ["case-a"]}}}), encoding="utf-8")
+    config = tmp_path / "Aftertime-config"
+    (config / "e2e").mkdir(parents=True)
+    (config / "e2e" / "bindings.json").write_text(json.dumps(
+        {"rental-issue": {"runner": {"proofPattern": "verify-(?P<phase>[a-z]+)\\.json$", "live": True}}}), encoding="utf-8")
+    binding = load_bindings(config, tmp_path)["rental-issue"]
+    assert binding.phases == ["order", "issue"]
+    assert binding.cases == ["case-a"]
+    assert binding.live is True
+    assert binding.proof_pattern == r"verify-(?P<phase>[a-z]+)\.json$"
+
+
+def test_failed_run_keeps_live_proofs_when_the_folder_has_none(tmp_path, monkeypatch):
+    folder = tmp_path / "suite-20261103-124201"
+    folder.mkdir()
+    (folder / "case-a-FAILURE.txt").write_text("the case did not pass", encoding="utf-8")
+    live = [(f"verify-5-{phase}.json", "{}") for phase in ["order", "issue", "deposit", "pay", "return", "noextra"]]
+    calls = []
+    monkeypatch.setattr("e2e_bridge.runner.live_entries", lambda command, since: calls.append(1) or ([] if len(calls) == 1 else live))
+    center = FakeCenter([
+        {"status": "running", "lines": [], "next": 0},
+        {"status": "failed", "lines": [f"Результат: failed  (докази: {folder})"], "next": 1},
+    ])
+    binding = Binding(**{**BINDING.__dict__, "live": True})
+    settings = Settings(center_url="", run_root=tmp_path, live_command="probe", poll_seconds=0)
+    result = follow(center, settings, binding, "job-3", lambda event: None, sleep=lambda _: None)
+    assert result["folder"] == str(folder)
+    final = states(result["states"])
+    assert final["noextra"] == "passed"
+    assert final["depositreturn"] == "failed"
+    assert final["order"] == "passed"

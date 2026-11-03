@@ -153,6 +153,7 @@ class LabProject(Base):
     description: Mapped[str] = mapped_column(Text, default="")
     active_draft_id: Mapped[str | None] = mapped_column(String(80))
     published_version_id: Mapped[str | None] = mapped_column(String(80))
+    pack_id: Mapped[str | None] = mapped_column(String(80), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -394,6 +395,21 @@ class LabWorkflow(Base):
     id: Mapped[str] = mapped_column(String(80), primary_key=True, default=new_id)
     name: Mapped[str] = mapped_column(String(200), index=True)
     description: Mapped[str] = mapped_column(Text, default="")
+    pack_id: Mapped[str | None] = mapped_column(String(80), index=True)
+
+
+class LabPack(Base):
+    """A domain model pack installed into this Aftertime (energy, rental, …)."""
+
+    __tablename__ = "lab_packs"
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    title: Mapped[str] = mapped_column(String(240))
+    version: Mapped[str] = mapped_column(String(40), default="0")
+    description: Mapped[str] = mapped_column(Text, default="")
+    source: Mapped[str] = mapped_column(Text, default="")
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    report: Mapped[dict] = mapped_column(JSONB, default=dict)
+    installed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class LabWorkflowVersion(Base):

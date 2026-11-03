@@ -2,8 +2,9 @@
 
 A process opts in with ``aftertime:testBinding="<binding id>"`` on ``bpmn:process``;
 its activities and catch events name the test phase they represent with
-``aftertime:testPhase``.  The bindings themselves are organization settings and
-live outside this repository, in ``$AFTERTIME_CONFIG_DIR/e2e/bindings.json``::
+``aftertime:testPhase``.  Bindings live outside this repository: a model pack ships
+them (``bindings`` in its manifest), and ``$AFTERTIME_CONFIG_DIR/e2e/bindings.json`` may
+add bindings or override ``runner`` details for a particular test stand::
 
     {"<binding id>": {"title": "...", "phases": ["order", "issue"], "runner": {...}}}
 
@@ -19,6 +20,7 @@ from typing import Any
 from xml.etree import ElementTree
 
 from app.services.bpmn_profile import AFTERTIME_NS, BPMN_NS
+from app.services.packs import discover
 
 # Elements a token waits on; only these can mirror a test phase.
 PHASE_TAGS = {
@@ -39,12 +41,24 @@ def bindings_path() -> Path:
     return Path(os.environ.get("AFTERTIME_CONFIG_DIR", "/config")) / "e2e" / "bindings.json"
 
 
-def load_bindings(path: Path | None = None) -> dict[str, dict[str, Any]]:
-    path = path or bindings_path()
+def _read(path: Path) -> dict[str, dict[str, Any]]:
     if not path.exists():
         return {}
     data = json.loads(path.read_text(encoding="utf-8"))
     return {key: value for key, value in data.items() if isinstance(value, dict)}
+
+
+def load_bindings(path: Path | None = None) -> dict[str, dict[str, Any]]:
+    """Bindings of every pack, then the stand settings on top (``runner`` merged key by key)."""
+    if path is not None:
+        return _read(path)
+    merged: dict[str, dict[str, Any]] = {}
+    for pack in discover().values():
+        merged.update(pack.bindings_data())
+    for key, value in _read(bindings_path()).items():
+        base = merged.get(key, {})
+        merged[key] = {**base, **value, "runner": {**base.get("runner", {}), **value.get("runner", {})}}
+    return merged
 
 
 def _local(tag: str) -> str:

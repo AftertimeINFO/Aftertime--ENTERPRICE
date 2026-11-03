@@ -542,7 +542,7 @@ def workspace(project_id: str | None = None, db: Session = Depends(get_db)) -> d
 
 @router.post("/projects")
 def create_project(body: dict[str, Any], db: Session = Depends(get_db)) -> dict:
-    project = LabProject(name=body["name"], description=body.get("description", ""))
+    project = LabProject(name=body["name"], description=body.get("description", ""), pack_id=body.get("pack_id") or None)
     db.add(project); db.flush()
     draft = LabModelVersion(project_id=project.id, version=1, status="draft", name=body.get("version_name", "Нова модель"), timezone=body.get("timezone", "Europe/Kyiv"), settings=body.get("settings", {}), architecture_version=2)
     db.add(draft); db.flush(); project.active_draft_id = draft.id

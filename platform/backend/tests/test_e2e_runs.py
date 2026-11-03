@@ -29,6 +29,7 @@ def bindings(tmp_path, monkeypatch):
     (tmp_path / "e2e").mkdir()
     (tmp_path / "e2e" / "bindings.json").write_text(json.dumps(BINDINGS), encoding="utf-8")
     monkeypatch.setenv("AFTERTIME_CONFIG_DIR", str(tmp_path))
+    monkeypatch.setenv("AFTERTIME_PACKS_DIR", str(tmp_path / "no-packs"))
 
 
 @pytest.fixture

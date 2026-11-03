@@ -73,7 +73,7 @@ def main(argv: list[str] | None = None) -> int:
 def _dispatch(args: argparse.Namespace) -> int:
     directory = config_dir()
     settings = Settings.load(directory)
-    bindings = load_bindings(directory)
+    bindings = load_bindings(directory, settings.packs_dir or directory.parent)
     center = Center(settings.center_url)
 
     if args.command == "import-results":

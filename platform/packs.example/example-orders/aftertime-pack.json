@@ -1,0 +1,10 @@
+{
+  "id": "example",
+  "title": "Приклад пакета",
+  "version": "0.1.0",
+  "core": ">=0.4",
+  "description": "Демонстраційний пакет: один процес, прив'язаний до вигаданого E2E-кейсу.",
+  "processes": "processes/*.bpmn",
+  "bindings": "e2e/bindings.json",
+  "publish": true
+}

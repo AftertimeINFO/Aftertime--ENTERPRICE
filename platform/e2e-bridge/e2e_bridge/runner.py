@@ -26,6 +26,7 @@ class Settings:
     run_root: Path
     aftertime_url: str = ""
     results_root: Path | None = None
+    packs_dir: Path | None = None
     live_command: str = ""
     poll_seconds: float = 5
     live_seconds: float = 20
@@ -44,6 +45,7 @@ class Settings:
             run_root=Path(values.get("RUN_ROOT", ".")),
             aftertime_url=values.get("AFTERTIME_API_URL", "http://localhost:8000/api/v1"),
             results_root=Path(values["RESULTS_ROOT"]) if values.get("RESULTS_ROOT") else None,
+            packs_dir=Path(values["PACKS_DIR"]) if values.get("PACKS_DIR") else None,
             live_command=values.get("LIVE_COMMAND", ""),
             poll_seconds=float(values.get("POLL_SECONDS", 5)),
             live_seconds=float(values.get("LIVE_SECONDS", 20)),
@@ -78,10 +80,34 @@ class Binding:
         )
 
 
-def load_bindings(config_dir: Path) -> dict[str, Binding]:
-    path = config_dir / "e2e" / "bindings.json"
+def _read_bindings(path: Path) -> dict[str, dict[str, Any]]:
     data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
-    return {key: Binding.from_config(key, value) for key, value in data.items() if isinstance(value, dict)}
+    return {key: value for key, value in data.items() if isinstance(value, dict)}
+
+
+def pack_bindings(packs_dir: Path | None) -> dict[str, dict[str, Any]]:
+    """Bindings shipped by model packs (directories with aftertime-pack.json)."""
+    found: dict[str, dict[str, Any]] = {}
+    if not packs_dir or not packs_dir.is_dir():
+        return found
+    for path in sorted(item for item in packs_dir.iterdir() if (item / "aftertime-pack.json").exists()):
+        try:
+            manifest = json.loads((path / "aftertime-pack.json").read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if manifest.get("bindings"):
+            for key, value in _read_bindings(path / manifest["bindings"]).items():
+                found.setdefault(key, value)
+    return found
+
+
+def load_bindings(config_dir: Path, packs_dir: Path | None = None) -> dict[str, Binding]:
+    """Pack bindings with the stand settings on top, the same merge as the Aftertime core."""
+    merged = pack_bindings(packs_dir)
+    for key, value in _read_bindings(config_dir / "e2e" / "bindings.json").items():
+        base = merged.get(key, {})
+        merged[key] = {**base, **value, "runner": {**base.get("runner", {}), **value.get("runner", {})}}
+    return {key: Binding.from_config(key, value) for key, value in merged.items()}
 
 
 def find_run_folder(lines: list[str], run_root: Path, mask: str) -> Path | None:
@@ -178,7 +204,10 @@ def follow(
         sleep(settings.poll_seconds)
     folder = find_run_folder(lines, settings.run_root, binding.run_folder_mask)
     outcome = status
-    final = folder_states(binding, folder, outcome) if folder else phase_states(binding.phases, live_proofs, outcome)
+    # A failed runner may not copy its proofs into the run folder, so the folder only adds to
+    # what was seen live and never erases it.
+    folder_proofs = read_proofs(folder_entries(folder), binding.proof_pattern, binding.error_pattern) if folder else {}
+    final = phase_states(binding.phases, {**live_proofs, **folder_proofs}, outcome)
     for item in changes(states, final):
         sink({"type": "phase", "job": job_id, **item})
     result = {"type": "finished", "job": job_id, "status": outcome,
