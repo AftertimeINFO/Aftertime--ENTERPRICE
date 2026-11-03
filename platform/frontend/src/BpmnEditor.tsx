@@ -15,6 +15,7 @@ type Props = {
   onSaved: (workflow: Row) => void;
   onValidation: (validation: Row) => void;
   onError: (message: string) => void;
+  onOpenReport?: (launchId: string) => void;
 };
 
 const EVENT_OPTIONS: Record<string, { value: string; label: string; definition?: string }[]> = {
@@ -69,7 +70,7 @@ function eventKind(element: any): string {
   } as Record<string, string>)[definition] || "none";
 }
 
-export function BpmnEditor({ workflow, immutable, onSaved, onValidation, onError }: Props) {
+export function BpmnEditor({ workflow, immutable, onSaved, onValidation, onError, onOpenReport }: Props) {
   const container = useRef<HTMLDivElement | null>(null);
   const editor = useRef<any>(null);
   const [selected, setSelected] = useState<any>(null);
@@ -218,7 +219,7 @@ export function BpmnEditor({ workflow, immutable, onSaved, onValidation, onError
       </ul>}
       {workflow.test && dirty && <span>Покриття оновиться після збереження.</span>}
     </aside>}
-    {immutable && ready && workflow.test && <E2ePanel workflow={workflow} viewer={editor.current} onError={onError} />}
+    {immutable && ready && workflow.test && <E2ePanel workflow={workflow} viewer={editor.current} onError={onError} onOpenReport={onOpenReport} />}
     <datalist id="bpmn-test-phases">{phaseOptions(bindings, processObject()?.$attrs?.["aftertime:testBinding"]).map((phase) => <option value={phase} key={phase} />)}</datalist>
   </div>;
 }

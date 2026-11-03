@@ -25,6 +25,7 @@ class Settings:
     center_url: str
     run_root: Path
     aftertime_url: str = ""
+    results_root: Path | None = None
     live_command: str = ""
     poll_seconds: float = 5
     live_seconds: float = 20
@@ -42,6 +43,7 @@ class Settings:
             center_url=values.get("CENTER_URL", ""),
             run_root=Path(values.get("RUN_ROOT", ".")),
             aftertime_url=values.get("AFTERTIME_API_URL", "http://localhost:8000/api/v1"),
+            results_root=Path(values["RESULTS_ROOT"]) if values.get("RESULTS_ROOT") else None,
             live_command=values.get("LIVE_COMMAND", ""),
             poll_seconds=float(values.get("POLL_SECONDS", 5)),
             live_seconds=float(values.get("LIVE_SECONDS", 20)),

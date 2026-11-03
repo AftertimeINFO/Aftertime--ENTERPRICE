@@ -13,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import LabE2eRun, LabWorkflowVersion
+from app.models import LabE2eRun, LabWorkflowVersion, ReportLaunch
 from app.services.test_bindings import load_bindings, phase_coverage
 
 router = APIRouter(prefix="/api/v1/lab", tags=["e2e"])
@@ -90,7 +90,8 @@ def list_e2e_runs(version_id: str, db: Session = Depends(get_db)) -> list[dict[s
 @router.get("/e2e-runs/{run_id}")
 def e2e_run(run_id: str, start: int = 0, db: Session = Depends(get_db)) -> dict[str, Any]:
     run = _get_run(db, run_id)
-    return {**_summary(run), "lines": run.log[start:], "next": len(run.log)}
+    report = db.scalar(select(ReportLaunch.id).where(ReportLaunch.e2e_run_id == run.id))
+    return {**_summary(run), "lines": run.log[start:], "next": len(run.log), "report_launch_id": report}
 
 
 @router.post("/e2e-runs/{run_id}/stop")

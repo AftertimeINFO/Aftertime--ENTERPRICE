@@ -5,10 +5,12 @@ from __future__ import annotations
 import json
 import time
 import urllib.request
+from datetime import datetime
 from typing import Any, Callable
 
 from e2e_bridge.center import Center, CenterError
 from e2e_bridge.phases import PASSED, Proof, changes, phase_states
+from e2e_bridge.results import Uploader, newest_launch_for
 from e2e_bridge.runner import Binding, Settings, follow
 
 
@@ -115,6 +117,7 @@ def execute(
         sink({"type": "queued", "job": f"simulation-{run['id'][:8]}", "ahead": 0})
         simulate(binding, f"simulation-{run['id'][:8]}", sink, should_stop=should_stop, **simulation)
         return
+    started = datetime.now()
     try:
         busy = center.busy()
         job_id = center.run(binding.cases, f"Aftertime · {binding.title}")
@@ -122,6 +125,23 @@ def execute(
         follow(center, settings, binding, job_id, sink, should_stop=should_stop)
     except CenterError as exc:
         sink({"type": "error", "message": f"Центр E2E недоступний: {exc}"})
+        return
+    import_report(settings, binding, run["id"], started, sink)
+
+
+def import_report(settings: Settings, binding: Binding, run_id: str, since: datetime, sink: Callable[[dict], None]) -> None:
+    """Bring the test report of a finished run into Aftertime reports."""
+    if not settings.results_root or not settings.results_root.is_dir():
+        return
+    folder = newest_launch_for(settings.results_root, binding.cases, since)
+    if folder is None:
+        sink({"type": "log", "line": "Aftertime: звіт прогону в результатах не знайдено"})
+        return
+    try:
+        result = Uploader(settings.aftertime_url).upload(folder, e2e_run_id=run_id)
+        sink({"type": "report", "launch": result["launch_id"], "folder": folder.name})
+    except OSError as exc:
+        sink({"type": "log", "line": f"Aftertime: звіт {folder.name} не імпортовано: {exc}"})
 
 
 def serve(

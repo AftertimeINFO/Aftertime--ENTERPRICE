@@ -5,6 +5,8 @@
     python -m e2e_bridge run BINDING [--wait-free]
     python -m e2e_bridge follow BINDING JOB_ID
     python -m e2e_bridge serve [--simulate [--fail-at PHASE] [--step SECONDS]] [--once]
+    python -m e2e_bridge import-results FOLDER...   # allure-results → звіти Aftertime
+    python -m e2e_bridge sync-results [ROOT]        # усі запуски з RESULTS_ROOT
 
 Settings come from ``$AFTERTIME_CONFIG_DIR/e2e`` (``bindings.json``, ``bridge.env``);
 without the variable, ``../Aftertime-config`` next to the repository root.
@@ -22,6 +24,7 @@ from pathlib import Path
 
 from e2e_bridge.center import Center, CenterError
 from e2e_bridge.runner import Settings, folder_states, follow, load_bindings
+from e2e_bridge.results import Uploader, sync
 from e2e_bridge.service import Aftertime, serve
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -55,6 +58,10 @@ def main(argv: list[str] | None = None) -> int:
     serve_cmd.add_argument("--fail-at", help="фаза, на якій симуляція падає")
     serve_cmd.add_argument("--step", type=float, default=3, help="секунд на фазу в симуляції")
     serve_cmd.add_argument("--once", action="store_true", help="обробити один запит і вийти")
+    import_cmd = commands.add_parser("import-results", help="імпортувати теки allure-results у звіти Aftertime")
+    import_cmd.add_argument("folders", type=Path, nargs="+")
+    sync_cmd = commands.add_parser("sync-results", help="імпортувати всі запуски з RESULTS_ROOT")
+    sync_cmd.add_argument("root", type=Path, nargs="?")
     args = parser.parse_args(argv)
     try:
         return _dispatch(args)
@@ -68,6 +75,20 @@ def _dispatch(args: argparse.Namespace) -> int:
     settings = Settings.load(directory)
     bindings = load_bindings(directory)
     center = Center(settings.center_url)
+
+    if args.command == "import-results":
+        uploader = Uploader(settings.aftertime_url)
+        for folder in args.folders:
+            emit({"type": "imported", **uploader.upload(folder)})
+        return 0
+
+    if args.command == "sync-results":
+        root = args.root or settings.results_root
+        if not root:
+            emit({"type": "error", "message": "Не задано RESULTS_ROOT у bridge.env"})
+            return 2
+        emit({"type": "synced", "launches": sync(root, Uploader(settings.aftertime_url), emit)})
+        return 0
 
     if args.command == "serve":
         simulation = {"step_seconds": args.step, "fail_at": args.fail_at} if args.simulate else None

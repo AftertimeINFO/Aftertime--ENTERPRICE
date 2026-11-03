@@ -6,10 +6,11 @@ type Props = {
   workflow: Row;
   viewer: any;
   onError: (message: string) => void;
+  onOpenReport?: (launchId: string) => void;
 };
 
 /** Runs the end-to-end test bound to a published process and paints its progress on the diagram. */
-export function E2ePanel({ workflow, viewer, onError }: Props) {
+export function E2ePanel({ workflow, viewer, onError, onOpenReport }: Props) {
   const versionId = workflow.version.id;
   const [runs, setRuns] = useState<Row[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -86,6 +87,7 @@ export function E2ePanel({ workflow, viewer, onError }: Props) {
       </li>)}
     </ol>}
     {lines.length > 0 && <pre className="e2e-log">{lines.slice(-40).join("\n")}</pre>}
+    {run?.report_launch_id && onOpenReport && <button className="link" onClick={() => onOpenReport(run.report_launch_id)}>Відкрити звіт прогону</button>}
     {run?.folder && <span className="e2e-folder">Тека запуску: {run.folder}</span>}
     {runs.length > 1 && <select value={selectedId || ""} onChange={(event) => setSelectedId(event.target.value)}>
       {runs.map((item) => <option key={item.id} value={item.id}>{new Date(item.created_at).toLocaleString("uk-UA")} · {runStatusLabel(item)}</option>)}

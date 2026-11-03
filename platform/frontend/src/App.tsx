@@ -18,6 +18,7 @@ import "@xyflow/react/dist/style.css";
 import { api, type PortContract, type Row, type Workspace } from "./api";
 import { BpmnCollaboration, BpmnEditor } from "./BpmnEditor";
 import { processCatalog } from "./testBindings";
+import { ReportsView } from "./ReportsView";
 import {
   EVENT_ACTION_LABELS,
   actionTargetKind,
@@ -148,7 +149,8 @@ const nodeTypes = { lab: GraphNode, workflow: BpmnNode, eventTrigger: EventTrigg
 export default function App() {
   const [w, setW] = useState<Workspace | null>(null),
     [projectId, setProjectId] = useState(""),
-    [mode, setMode] = useState<"model" | "process" | "events" | "participants">("model"),
+    [reportLaunchId, setReportLaunchId] = useState<string | null>(null),
+    [mode, setMode] = useState<"model" | "process" | "events" | "participants" | "reports">("model"),
     [viewVersion, setViewVersion] = useState<Row | null>(null),
     [graphRows, setGraphRows] = useState<Row[]>([]),
     [edgeRows, setEdgeRows] = useState<Row[]>([]),
@@ -542,7 +544,7 @@ export default function App() {
   if (!w)
     return <div className="loading">MODEL LAB · завантаження… {error}</div>;
   return (
-    <main className="app-shell">
+    <main className={`app-shell ${mode === "reports" ? "reports-shell" : ""}`}>
       <header className="topbar">
         <div className="brand">
           <i />
@@ -641,6 +643,15 @@ export default function App() {
           >
             Учасники та процеси
           </button>
+          <button
+            className={mode === "reports" ? "active" : ""}
+            onClick={() => {
+              setReportLaunchId(null);
+              setMode("reports");
+            }}
+          >
+            Звіти
+          </button>
         </div>
         <div className="version">
           <span
@@ -674,8 +685,19 @@ export default function App() {
           <button onClick={() => setError("")}>×</button>
         </div>
       )}
-      <section className={`workbench ${mode === "participants" ? "participant-workbench" : ""}`}>
-        {mode === "participants" ? <ParticipantProcessTable
+      <section className={`workbench ${mode === "participants" || mode === "reports" ? "participant-workbench" : ""}`}>
+        {mode === "reports" ? <ReportsView
+          initialLaunchId={reportLaunchId}
+          onError={setError}
+          onOpenProcess={async (binding) => {
+            const target = processCatalog(w?.workflows || []).find((item) =>
+              item.bpmn_xml?.includes(`aftertime:testBinding="${binding}"`));
+            if (!target) { setError(`Процес із прив'язкою «${binding}» не знайдено`); return; }
+            setWorkflow(await api.workflow(target.id));
+            setValidation(null);
+            setMode("process");
+          }}
+        /> : mode === "participants" ? <ParticipantProcessTable
           data={assembly}
           onOpenWorkflow={async (versionId) => {
             setWorkflow(await api.workflow(versionId));
@@ -790,6 +812,10 @@ export default function App() {
             onSaved={setWorkflow}
             onValidation={setValidation}
             onError={setError}
+            onOpenReport={(launchId) => {
+              setReportLaunchId(launchId);
+              setMode("reports");
+            }}
           /> : <ReactFlow
             onInit={setFlow}
             nodes={nodes}
@@ -911,7 +937,7 @@ export default function App() {
         />}
         </>}
       </section>
-      <Monitor
+      {mode !== "reports" && <Monitor
         w={{ ...w, observables }}
         graphRows={graphRows}
         run={run}
@@ -922,7 +948,7 @@ export default function App() {
         setRun={setRun}
         selectedNodeId={selectedId}
         focusNode={focusGraphNode}
-      />
+      />}
       {busy && <div className="busy">ОБРОБКА…</div>}
     </main>
   );

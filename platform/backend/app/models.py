@@ -450,6 +450,48 @@ class LabE2eRun(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class ReportLaunch(Base):
+    """One imported set of test results in the Allure results format."""
+
+    __tablename__ = "report_launches"
+    id: Mapped[str] = mapped_column(String(80), primary_key=True, default=new_id)
+    name: Mapped[str] = mapped_column(String(200), unique=True)
+    executor: Mapped[dict] = mapped_column(JSONB, default=dict)
+    environment: Mapped[dict] = mapped_column(JSONB, default=dict)
+    categories: Mapped[list] = mapped_column(JSONB, default=list)
+    stats: Mapped[dict] = mapped_column(JSONB, default=dict)
+    start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    stop: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    e2e_run_id: Mapped[str | None] = mapped_column(String(80), index=True)
+    imported_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ReportResult(Base):
+    __tablename__ = "report_results"
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    launch_id: Mapped[str] = mapped_column(ForeignKey("report_launches.id", ondelete="CASCADE"), index=True)
+    history_id: Mapped[str] = mapped_column(String(200), index=True)
+    full_name: Mapped[str] = mapped_column(Text, default="")
+    name: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(20), index=True)
+    parent_suite: Mapped[str] = mapped_column(Text, default="")
+    suite: Mapped[str] = mapped_column(Text, default="")
+    sub_suite: Mapped[str] = mapped_column(Text, default="")
+    category: Mapped[str | None] = mapped_column(Text)
+    message: Mapped[str] = mapped_column(Text, default="")
+    start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    duration_ms: Mapped[int] = mapped_column(Integer, default=0)
+    data: Mapped[dict] = mapped_column(JSONB, default=dict)
+
+
+class ReportAttachment(Base):
+    __tablename__ = "report_attachments"
+    source: Mapped[str] = mapped_column(String(200), primary_key=True)
+    content_type: Mapped[str] = mapped_column(String(120), default="application/octet-stream")
+    size: Mapped[int] = mapped_column(Integer, default=0)
+    stored: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
 class LabWorkflowDefinitionBackup(Base):
     __tablename__ = "lab_workflow_definition_backups"
     id: Mapped[str] = mapped_column(String(80), primary_key=True, default=new_id)

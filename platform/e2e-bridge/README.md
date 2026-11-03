@@ -31,7 +31,14 @@ python -m e2e_bridge status                      # стан центру: що �
 python -m e2e_bridge replay BINDING RUN_FOLDER   # стани фаз за записаною текою запуску
 python -m e2e_bridge run BINDING [--wait-free]   # поставити кейс у чергу й стежити
 python -m e2e_bridge follow BINDING JOB_ID       # стежити за вже поставленим завданням
+python -m e2e_bridge serve [--simulate]          # виконувати прогони, запитані в Aftertime
+python -m e2e_bridge import-results FOLDER...    # теки allure-results → звіти Aftertime
+python -m e2e_bridge sync-results [ROOT]         # усі запуски з RESULTS_ROOT
 ```
+
+`bridge.env` додатково має `AFTERTIME_API_URL` (API Aftertime) і `RESULTS_ROOT` (тека з
+підтеками `allure-results`). Після прогону з Aftertime міст сам імпортує результати цього
+прогону у звіти. Підтеки з `_` на початку (злиті подання) не імпортуються.
 
 Кожна подія — окремий рядок JSON: `queued`, `states`, `status`, `log`, `phase`, `finished`, `error`.
 
