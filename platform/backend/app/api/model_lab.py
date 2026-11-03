@@ -7,7 +7,7 @@ from hashlib import sha256
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from sqlalchemy import delete, func, inspect, or_, select
 from sqlalchemy.orm import Session
 
@@ -29,7 +29,7 @@ from app.models import (
     LabQualificationDefinition, LabProcessSet, LabProcessSetVersion,
     LabProcessSetWorkflow, LabScenarioAssemblyLink, LabScenarioAssemblyMember,
     LabScenarioAssemblyNodeMap, LabScenarioAssemblyVersion,
-    LabScenarioProcessBinding,
+    LabScenarioProcessBinding, LabWorkflowPresentation,
 )
 from app.services.model_lab import (
     _apply_script_result,
@@ -42,6 +42,7 @@ from app.services.model_lab import (
 )
 from app.services.model_contracts import connection_diagnostics, normalized_ports, observable_catalog, stable_key
 from app.services.bpmn_profile import build_bpmn_xml, build_collaboration_xml, parse_bpmn, validate_bpmn
+from app.services.bpmn_svg import SvgPresentationError, annotate_svg, bpmn_sha256
 from app.services.qualification import (
     replay_qualification_package,
     validate_qualification_package,
@@ -127,6 +128,46 @@ def _replace_workflow_projection(
     version.validation = validation
     version.validated_at = datetime.now(UTC)
     return validation
+
+
+def _presentation_status(db: Session, version: LabWorkflowVersion) -> dict[str, Any]:
+    presentation = db.get(LabWorkflowPresentation, version.id)
+    current = bpmn_sha256(version.bpmn_xml)
+    if not presentation or not presentation.svg:
+        return {"status": "missing", "current_bpmn_sha256": current}
+    status = presentation.report.get("status", "synced")
+    if presentation.bpmn_sha256 != current:
+        status = "stale"
+    return {
+        "status": status,
+        "current_bpmn_sha256": current,
+        "bpmn_sha256": presentation.bpmn_sha256,
+        "missing": presentation.report.get("missing", []),
+        "updated_at": presentation.updated_at,
+    }
+
+
+def _store_presentation(
+    db: Session, version: LabWorkflowVersion, svg: str
+) -> dict[str, Any]:
+    try:
+        annotated, report = annotate_svg(
+            svg,
+            version.bpmn_xml,
+            process_id=version.workflow_id,
+            version_id=version.id,
+            version=version.version,
+        )
+    except SvgPresentationError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    presentation = db.get(LabWorkflowPresentation, version.id) or LabWorkflowPresentation(
+        workflow_version_id=version.id
+    )
+    presentation.svg = annotated
+    presentation.bpmn_sha256 = bpmn_sha256(version.bpmn_xml)
+    presentation.report = report
+    db.add(presentation)
+    return report
 
 
 def enqueue_run_or_503(db: Session, run: LabRun) -> None:
@@ -1462,7 +1503,7 @@ def workflow(version_id: str, db: Session = Depends(get_db)) -> dict:
     if not version.bpmn_xml and nodes:
         _refresh_workflow_xml(db, version)
         db.commit()
-    return {"version": row(version), "nodes": [row(x) for x in nodes], "transitions": [row(x) for x in transitions]}
+    return {"version": row(version), "nodes": [row(x) for x in nodes], "transitions": [row(x) for x in transitions], "presentation": _presentation_status(db, version)}
 
 
 @router.post("/workflows")
@@ -1522,8 +1563,70 @@ def save_workflow_bpmn(
     validation = _replace_workflow_projection(db, version, xml)
     if isinstance(body.get("description"), str):
         version.description = body["description"].strip()
+    if isinstance(body.get("bpmn_svg"), str) and body["bpmn_svg"].strip():
+        _store_presentation(db, version, body["bpmn_svg"])
     db.commit()
     return {**workflow(version.id, db), "validation": validation}
+
+
+@router.put("/workflows/{version_id}/svg")
+def save_workflow_svg(
+    version_id: str, body: dict[str, Any], db: Session = Depends(get_db)
+) -> dict[str, Any]:
+    """Attach a drawing to any version, published ones included.
+
+    The SVG is a presentation, not part of the immutable model, so it may be
+    regenerated at any time — but only for the exact BPMN document it shows.
+    """
+    version = db.get(LabWorkflowVersion, version_id)
+    if not version:
+        raise HTTPException(404, "Workflow not found")
+    svg = body.get("bpmn_svg")
+    if not isinstance(svg, str) or not svg.strip():
+        raise HTTPException(422, "bpmn_svg is required")
+    if body.get("bpmn_sha256") != bpmn_sha256(version.bpmn_xml):
+        raise HTTPException(409, "SVG was drawn from a different BPMN document")
+    _store_presentation(db, version, svg)
+    db.commit()
+    return _presentation_status(db, version)
+
+
+@router.get("/workflows/{version_id}/svg")
+def workflow_svg(version_id: str, db: Session = Depends(get_db)) -> Response:
+    version = db.get(LabWorkflowVersion, version_id)
+    presentation = db.get(LabWorkflowPresentation, version_id)
+    if not version or not presentation or not presentation.svg:
+        raise HTTPException(404, "Workflow SVG not found")
+    status = _presentation_status(db, version)["status"]
+    return Response(
+        presentation.svg,
+        media_type="image/svg+xml",
+        headers={"X-Aftertime-Svg-Status": status},
+    )
+
+
+@router.get("/workflows/{version_id}/export")
+def export_workflow(version_id: str, db: Session = Depends(get_db)) -> dict[str, Any]:
+    """BPMN and its SVG as one consistent pair, for files and agents."""
+    version = db.get(LabWorkflowVersion, version_id)
+    if not version:
+        raise HTTPException(404, "Workflow not found")
+    if not version.bpmn_xml:
+        _refresh_workflow_xml(db, version)
+        db.commit()
+    presentation = db.get(LabWorkflowPresentation, version_id)
+    return {
+        "file_stem": f"{version.workflow_id}.v{version.version}",
+        "workflow_id": version.workflow_id,
+        "version_id": version.id,
+        "version": version.version,
+        "status": version.status,
+        "name": version.name,
+        "bpmn_xml": version.bpmn_xml,
+        "bpmn_sha256": bpmn_sha256(version.bpmn_xml),
+        "bpmn_svg": presentation.svg if presentation else "",
+        "presentation": _presentation_status(db, version),
+    }
 
 
 @router.post("/workflows/{version_id}/debug")
@@ -1589,6 +1692,9 @@ def clone_workflow(version_id: str, db: Session = Depends(get_db)) -> dict:
         new = LabWorkflowNode(workflow_version_id=draft.id, node_key=old.node_key, block_type=old.block_type, name=old.name, x=old.x, y=old.y, config=deepcopy(old.config), python_code=old.python_code); db.add(new); db.flush(); mapping[old.id] = new.id
     for old in db.scalars(select(LabWorkflowTransition).where(LabWorkflowTransition.workflow_version_id == source.id)):
         db.add(LabWorkflowTransition(workflow_version_id=draft.id, source_node_id=mapping[old.source_node_id], target_node_id=mapping[old.target_node_id], condition_code=old.condition_code, priority=old.priority))
+    source_presentation = db.get(LabWorkflowPresentation, source.id)
+    if source_presentation and source_presentation.svg and source_presentation.bpmn_sha256 == bpmn_sha256(draft.bpmn_xml):
+        _store_presentation(db, draft, source_presentation.svg)
     db.commit(); db.refresh(draft)
     return workflow(draft.id, db)
 

@@ -413,6 +413,21 @@ class LabWorkflowVersion(Base):
     __table_args__ = (UniqueConstraint("workflow_id", "version", name="uq_lab_workflow_version"),)
 
 
+class LabWorkflowPresentation(Base):
+    """SVG drawing of a workflow version; kept apart so workflow rows stay small."""
+
+    __tablename__ = "lab_workflow_presentations"
+    workflow_version_id: Mapped[str] = mapped_column(
+        ForeignKey("lab_workflow_versions.id", ondelete="CASCADE"), primary_key=True
+    )
+    svg: Mapped[str] = mapped_column(Text, default="")
+    bpmn_sha256: Mapped[str] = mapped_column(String(64), default="")
+    report: Mapped[dict] = mapped_column(JSONB, default=dict)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class LabWorkflowDefinitionBackup(Base):
     __tablename__ = "lab_workflow_definition_backups"
     id: Mapped[str] = mapped_column(String(80), primary_key=True, default=new_id)

@@ -14,6 +14,9 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    # 0001 builds current metadata on a clean install; keep replay safe until 0001 is frozen.
+    if sa.inspect(op.get_bind()).has_table("lab_workflow_definition_backups"):
+        return
     op.add_column(
         "lab_workflow_versions",
         sa.Column("bpmn_xml", sa.Text(), nullable=False, server_default=""),

@@ -531,7 +531,9 @@ def seed_model_lab(db):
         def qualification_target(kind, target):
             return event_target_map.get(kind, target.replace("p-", f"{target_prefix}-", 1))
         events=[{"at":f"{date}T{8+i:02d}:00:00+00:00","event_type":kind,"target_node_id":qualification_target(kind, target),"priority":priority,"payload":{"severity":.8}} for i,(kind,target,priority) in enumerate(steps)]
-        script_events = [{"offset_seconds": 86400 + i * 3600, "event_type": kind, "target": qualification_target(kind, target), "priority": priority, "payload": {"severity": .8}, "phase": "incident", "title": kind, "evidence": "derived"} for i, (kind, target, priority) in enumerate(steps)]
+        # Same labels as migration 0046, which on a clean install runs before seeding.
+        titles = {"generation_attack": "Атака на об’єкти генерації", "substation_attack": "Атака на магістральні підстанції", "transmission_attack": "Атака на мережу передачі"}
+        script_events = [{"offset_seconds": 86400 + i * 3600, "event_type": kind, "target": qualification_target(kind, target), "priority": priority, "payload": {"severity": .8}, "phase": "incident", "title": titles.get(kind, kind), "evidence": "derived"} for i, (kind, target, priority) in enumerate(steps)]
         process_rules = {}
         if sid == "storm-arwen-2021":
             hv, distribution = f"{target_prefix}-hv-line", f"{target_prefix}-distribution"
@@ -599,10 +601,12 @@ def seed_model_lab(db):
         if sid in pilot_package_ids:
             configuration["qualification_package_id"] = pilot_package_ids[sid]
         if sid == "storm-arwen-2021": configuration.update({"process_script_version_id": "process-resource-v1", "workflow_version_id": "storm-restoration-v1"})
+        expected = {**expected, "required_event_types": sorted({event[0] for event in steps}), "minimum_events": len(steps)}
+        # The scenario goes first: merging a template autoflushes, and on a clean install
+        # the template's scenario foreign key must already be satisfied.
+        db.merge(LabScenario(id=sid,model_version_id=model_id,name=name,description="Окрема виконувана безтериторіальна модель кваліфікаційної події",origin="test" if sid=="baseline" else "historical",source_url=sources.get(sid),start_at=run_start,incident_at=incident_at,pre_event_seconds=86400,post_event_seconds=int((run_end-incident_at).total_seconds()),duration_seconds=int((run_end-run_start).total_seconds()),seed=42,events=events,expected=expected,configuration=configuration))
         for template_index, event in enumerate(script_events):
             db.merge(LabScenarioEventTemplate(id=f"tpl-{sid}-{template_index}", scenario_id=sid, offset_seconds=event["offset_seconds"], priority=event.get("priority", 100), event_type=event["event_type"], target_node_id=event.get("target"), phase=event.get("phase", "scenario"), title=event.get("title", event["event_type"]), payload=event.get("payload", {}), evidence_kind=event.get("evidence", "assumed"), source_url=sources.get(sid), source_note="Публічна контрольна точка" if event.get("evidence") == "reported" else "Параметризоване припущення Model Lab"))
-        expected = {**expected, "required_event_types": sorted({event[0] for event in steps}), "minimum_events": len(steps)}
-        db.merge(LabScenario(id=sid,model_version_id=model_id,name=name,description="Окрема виконувана безтериторіальна модель кваліфікаційної події",origin="test" if sid=="baseline" else "historical",source_url=sources.get(sid),start_at=run_start,incident_at=incident_at,pre_event_seconds=86400,post_event_seconds=int((run_end-incident_at).total_seconds()),duration_seconds=int((run_end-run_start).total_seconds()),seed=42,events=events,expected=expected,configuration=configuration))
     db.flush()
     for scenario_id, package in QUALIFICATION_CASES.items():
         version_id = f"qualification-{scenario_id}"

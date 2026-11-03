@@ -411,6 +411,11 @@ textarea {
   box-shadow: 0 8px 26px #0005;
   font-size: 10px;
 }
+.bpmn-save-strip .svg-status.synced { color: #8fd6b4; }
+.bpmn-save-strip .svg-status.stale,
+.bpmn-save-strip .svg-status.incomplete,
+.bpmn-save-strip .svg-status.missing { color: #f0c27a; }
+.bpmn-save-strip a { color: #9ec9ff; }
 .bpmn-properties {
   position: absolute;
   top: 18px;

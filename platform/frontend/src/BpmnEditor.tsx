@@ -5,6 +5,7 @@ import "bpmn-js/dist/assets/diagram-js.css";
 import "bpmn-js/dist/assets/bpmn-js.css";
 import "bpmn-js/dist/assets/bpmn-font/css/bpmn.css";
 import { api, type Row } from "./api";
+import { needsSvgRepair, svgStatusLabel } from "./bpmnSvg";
 
 type Props = {
   workflow: Row;
@@ -72,6 +73,8 @@ export function BpmnEditor({ workflow, immutable, onSaved, onValidation, onError
   const [selected, setSelected] = useState<any>(null);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [presentation, setPresentation] = useState<Row | undefined>(workflow?.presentation);
+  useEffect(() => setPresentation(workflow?.presentation), [workflow?.presentation]);
 
   useEffect(() => {
     if (!container.current || !workflow?.version?.bpmn_xml) return;
@@ -80,10 +83,15 @@ export function BpmnEditor({ workflow, immutable, onSaved, onValidation, onError
       : new Modeler({ container: container.current, keyboard: { bindTo: window } });
     editor.current = instance;
     let alive = true;
-    instance.importXML(workflow.version.bpmn_xml).then(({ warnings }: any) => {
+    instance.importXML(workflow.version.bpmn_xml).then(async ({ warnings }: any) => {
       if (!alive) return;
       instance.get("canvas").zoom("fit-viewport");
       if (warnings?.length) onError(warnings.map((item: any) => item.message || String(item)).join(" · "));
+      if (needsSvgRepair(workflow.presentation)) {
+        const { svg } = await instance.saveSVG();
+        if (!alive) return;
+        setPresentation(await api.saveWorkflowSvg(workflow.version.id, svg, workflow.presentation.current_bpmn_sha256));
+      }
     }).catch((error: unknown) => onError(`Не вдалося відкрити BPMN XML: ${String(error)}`));
     const eventBus = instance.get("eventBus");
     const select = (event: any) => setSelected(event.newSelection?.[0] || null);
@@ -141,8 +149,10 @@ export function BpmnEditor({ workflow, immutable, onSaved, onValidation, onError
     setSaving(true);
     try {
       const { xml } = await editor.current.saveXML({ format: true });
-      const saved = await api.saveWorkflowBpmn(workflow.version.id, xml);
+      const { svg } = await editor.current.saveSVG();
+      const saved = await api.saveWorkflowBpmn(workflow.version.id, xml, svg);
       setDirty(false);
+      setPresentation(saved.presentation);
       onValidation(saved.validation || saved.version?.validation || {});
       onSaved(saved);
     } catch (error) {
@@ -159,6 +169,8 @@ export function BpmnEditor({ workflow, immutable, onSaved, onValidation, onError
     <div className="native-bpmn-canvas" ref={container} />
     {!immutable && <div className="bpmn-save-strip">
       <span>{dirty ? "Є незбережені зміни" : "BPMN XML синхронізовано"}</span>
+      <span className={`svg-status ${presentation?.status || "missing"}`}>{svgStatusLabel(presentation)}</span>
+      {presentation?.status && presentation.status !== "missing" && <a href={api.workflowSvgUrl(workflow.version.id)} target="_blank" rel="noreferrer">SVG</a>}
       <button disabled={!dirty || saving} onClick={save}>{saving ? "Збереження…" : "Зберегти BPMN"}</button>
     </div>}
     {selected && <aside className="bpmn-properties">
