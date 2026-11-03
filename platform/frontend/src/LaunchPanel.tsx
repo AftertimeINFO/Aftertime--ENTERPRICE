@@ -75,7 +75,7 @@ export function LaunchPanel({ onOpenLaunch, onError }: Props) {
       <div className="launch-badges">
         <span className={center?.online ? "ok" : "bad"}>{center?.online ? "Міст на зв'язку" : "Міст не на зв'язку"}</span>
         {data.error ? <span className="bad">Центр E2E недоступний</span> : <span className="ok">Центр E2E працює</span>}
-        {[["manager", "Менеджер Vanessa"], ["terminal", "Термінал"], ["prro", "ПРРО"], ["scanner", "Сканер"]].map(([key, title]) =>
+        {[["manager", "Менеджер тестів"], ["terminal", "Термінал"], ["prro", "ПРРО"], ["scanner", "Сканер"]].map(([key, title]) =>
           key in health && <span key={key} className={health[key] ? "ok" : "off"}>{title}</span>)}
         {health.freeD != null && <span className={health.freeD < 5 ? "bad" : "off"}>D: {health.freeD} ГБ</span>}
       </div>
