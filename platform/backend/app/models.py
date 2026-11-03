@@ -428,6 +428,28 @@ class LabWorkflowPresentation(Base):
     )
 
 
+class LabE2eRun(Base):
+    """An end-to-end test run of a bound process, executed by the external bridge."""
+
+    __tablename__ = "lab_e2e_runs"
+    id: Mapped[str] = mapped_column(String(80), primary_key=True, default=new_id)
+    workflow_version_id: Mapped[str] = mapped_column(
+        ForeignKey("lab_workflow_versions.id", ondelete="CASCADE"), index=True
+    )
+    binding: Mapped[str] = mapped_column(String(120))
+    status: Mapped[str] = mapped_column(String(20), default="queued", index=True)
+    center_job_id: Mapped[str | None] = mapped_column(String(80))
+    queue_ahead: Mapped[int | None] = mapped_column(Integer)
+    states: Mapped[list] = mapped_column(JSONB, default=list)
+    log: Mapped[list] = mapped_column(JSONB, default=list)
+    folder: Mapped[str | None] = mapped_column(Text)
+    error: Mapped[str | None] = mapped_column(Text)
+    stop_requested: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class LabWorkflowDefinitionBackup(Base):
     __tablename__ = "lab_workflow_definition_backups"
     id: Mapped[str] = mapped_column(String(80), primary_key=True, default=new_id)

@@ -4,6 +4,7 @@
     python -m e2e_bridge replay BINDING RUN_FOLDER [--outcome passed|failed|stopped]
     python -m e2e_bridge run BINDING [--wait-free]
     python -m e2e_bridge follow BINDING JOB_ID
+    python -m e2e_bridge serve [--simulate [--fail-at PHASE] [--step SECONDS]] [--once]
 
 Settings come from ``$AFTERTIME_CONFIG_DIR/e2e`` (``bindings.json``, ``bridge.env``);
 without the variable, ``../Aftertime-config`` next to the repository root.
@@ -21,6 +22,7 @@ from pathlib import Path
 
 from e2e_bridge.center import Center, CenterError
 from e2e_bridge.runner import Settings, folder_states, follow, load_bindings
+from e2e_bridge.service import Aftertime, serve
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -48,6 +50,11 @@ def main(argv: list[str] | None = None) -> int:
     follow_cmd = commands.add_parser("follow")
     follow_cmd.add_argument("binding")
     follow_cmd.add_argument("job")
+    serve_cmd = commands.add_parser("serve", help="виконувати прогони, запитані в Aftertime")
+    serve_cmd.add_argument("--simulate", action="store_true", help="без стенда: фази проходять за таймером")
+    serve_cmd.add_argument("--fail-at", help="фаза, на якій симуляція падає")
+    serve_cmd.add_argument("--step", type=float, default=3, help="секунд на фазу в симуляції")
+    serve_cmd.add_argument("--once", action="store_true", help="обробити один запит і вийти")
     args = parser.parse_args(argv)
     try:
         return _dispatch(args)
@@ -61,6 +68,11 @@ def _dispatch(args: argparse.Namespace) -> int:
     settings = Settings.load(directory)
     bindings = load_bindings(directory)
     center = Center(settings.center_url)
+
+    if args.command == "serve":
+        simulation = {"step_seconds": args.step, "fail_at": args.fail_at} if args.simulate else None
+        serve(Aftertime(settings.aftertime_url), bindings, center, settings, emit, simulation, args.once)
+        return 0
 
     if args.command == "status":
         emit({"type": "center", "url": settings.center_url, **center.busy(),

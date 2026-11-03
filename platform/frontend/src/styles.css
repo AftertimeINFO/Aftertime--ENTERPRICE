@@ -421,6 +421,47 @@ textarea {
 .test-coverage .covered { color: #8fd6b4; }
 .test-coverage .missing { color: #f08f7a; }
 .test-coverage .note { color: #f0c27a; }
+
+/* E2E run of a test-bound process */
+.e2e-panel {
+  position: absolute;
+  left: 18px;
+  bottom: 18px;
+  z-index: 5;
+  display: grid;
+  width: 380px;
+  max-height: 60%;
+  gap: 8px;
+  padding: 12px 14px;
+  overflow: auto;
+  color: #e4eee9;
+  background: #0b1a16ed;
+  border: 1px solid #315147;
+  border-radius: 6px;
+  box-shadow: 0 8px 26px #0005;
+  font-size: 11px;
+}
+.e2e-panel header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.e2e-status.running, .e2e-status.waiting, .e2e-status.claimed, .e2e-status.queued { color: #9ec9ff; }
+.e2e-status.passed { color: #8fd6b4; }
+.e2e-status.failed, .e2e-status.error { color: #f08f7a; }
+.e2e-status.stopped { color: #f0c27a; }
+.e2e-phases { display: flex; flex-wrap: wrap; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.e2e-phases li { padding: 2px 6px; border: 1px solid #315147; border-radius: 4px; }
+.e2e-phases .e2e-passed { border-color: #3f9b70; color: #8fd6b4; }
+.e2e-phases .e2e-failed { border-color: #c4553d; color: #f08f7a; }
+.e2e-phases .e2e-active { border-color: #4f8fd6; color: #9ec9ff; }
+.e2e-phases .e2e-stopped { border-color: #b68d3c; color: #f0c27a; }
+.e2e-phases .e2e-not-reached, .e2e-phases .e2e-pending { opacity: .55; }
+.e2e-log { max-height: 160px; margin: 0; overflow: auto; white-space: pre-wrap; font-size: 10px; color: #b9cbc3; }
+.e2e-folder { color: #9fb3ab; word-break: break-all; }
+
+.djs-element.e2e-passed .djs-visual > :is(rect, circle, polygon) { fill: #d8f5e6 !important; stroke: #2f8a5f !important; stroke-width: 3px !important; }
+.djs-element.e2e-failed .djs-visual > :is(rect, circle, polygon) { fill: #fde0da !important; stroke: #c4553d !important; stroke-width: 3px !important; }
+.djs-element.e2e-active .djs-visual > :is(rect, circle, polygon) { fill: #dceafe !important; stroke: #2f6fc4 !important; stroke-width: 4px !important; animation: e2e-pulse 1.2s ease-in-out infinite; }
+.djs-element.e2e-stopped .djs-visual > :is(rect, circle, polygon) { fill: #fbecd0 !important; stroke: #b68d3c !important; stroke-width: 3px !important; }
+.djs-element.e2e-not-reached .djs-visual { opacity: .45; }
+@keyframes e2e-pulse { 50% { stroke-opacity: .35; } }
 .bpmn-properties {
   position: absolute;
   top: 18px;

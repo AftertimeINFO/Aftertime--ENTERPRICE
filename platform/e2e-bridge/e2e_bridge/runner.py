@@ -24,6 +24,7 @@ _PATH_RE = re.compile(r"[A-Za-z]:\\[^\s\"'()]+")
 class Settings:
     center_url: str
     run_root: Path
+    aftertime_url: str = ""
     live_command: str = ""
     poll_seconds: float = 5
     live_seconds: float = 20
@@ -40,6 +41,7 @@ class Settings:
         return cls(
             center_url=values.get("CENTER_URL", ""),
             run_root=Path(values.get("RUN_ROOT", ".")),
+            aftertime_url=values.get("AFTERTIME_API_URL", "http://localhost:8000/api/v1"),
             live_command=values.get("LIVE_COMMAND", ""),
             poll_seconds=float(values.get("POLL_SECONDS", 5)),
             live_seconds=float(values.get("LIVE_SECONDS", 20)),
@@ -123,6 +125,7 @@ def follow(
     sink: Sink,
     clock: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], None] = time.sleep,
+    should_stop: Callable[[], bool] = lambda: False,
 ) -> dict[str, Any]:
     """Stream log lines and phase changes of one job until it finishes.
 
@@ -139,6 +142,7 @@ def follow(
     live_proofs: dict = {}
     next_live = clock()
     last_status = None
+    stop_sent = False
     sink({"type": "states", "job": job_id, "states": states})
     while True:
         job = center.job(job_id, position)
@@ -150,6 +154,10 @@ def follow(
         status = job.get("status")
         if status in FINISHED:
             break
+        if not stop_sent and should_stop():
+            stop_sent = True
+            sink({"type": "log", "job": job_id, "line": "Aftertime: зупинку запитано, зупиняю завдання в центрі"})
+            center.stop(job_id)
         if status == "running" and use_live and clock() >= next_live:
             next_live = clock() + settings.live_seconds
             fresh = [entry for entry in live_entries(settings.live_command, since) if entry[0] not in baseline]

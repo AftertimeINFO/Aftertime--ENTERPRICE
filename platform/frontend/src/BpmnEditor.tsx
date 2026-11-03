@@ -7,6 +7,7 @@ import "bpmn-js/dist/assets/bpmn-font/css/bpmn.css";
 import { api, type Row } from "./api";
 import { needsSvgRepair, svgStatusLabel } from "./bpmnSvg";
 import { acceptsTestPhase, phaseOptions } from "./testBindings";
+import { E2ePanel } from "./E2ePanel";
 
 type Props = {
   workflow: Row;
@@ -217,6 +218,7 @@ export function BpmnEditor({ workflow, immutable, onSaved, onValidation, onError
       </ul>}
       {workflow.test && dirty && <span>Покриття оновиться після збереження.</span>}
     </aside>}
+    {immutable && ready && workflow.test && <E2ePanel workflow={workflow} viewer={editor.current} onError={onError} />}
     <datalist id="bpmn-test-phases">{phaseOptions(bindings, processObject()?.$attrs?.["aftertime:testBinding"]).map((phase) => <option value={phase} key={phase} />)}</datalist>
   </div>;
 }
