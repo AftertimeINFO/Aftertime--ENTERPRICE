@@ -1,0 +1,9 @@
+[project]
+name = "aftertime-e2e-bridge"
+version = "0.1.0"
+description = "Runs E2E cases bound to Aftertime BPMN processes through an external control center"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

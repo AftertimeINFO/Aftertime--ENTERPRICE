@@ -5,6 +5,9 @@ import "bpmn-js/dist/assets/diagram-js.css";
 import "bpmn-js/dist/assets/bpmn-js.css";
 import "bpmn-js/dist/assets/bpmn-font/css/bpmn.css";
 import { api, type Row } from "./api";
+import { needsSvgRepair, svgStatusLabel } from "./bpmnSvg";
+import { acceptsTestPhase, phaseOptions } from "./testBindings";
+import { E2ePanel } from "./E2ePanel";
 
 type Props = {
   workflow: Row;
@@ -12,6 +15,7 @@ type Props = {
   onSaved: (workflow: Row) => void;
   onValidation: (validation: Row) => void;
   onError: (message: string) => void;
+  onOpenReport?: (launchId: string) => void;
 };
 
 const EVENT_OPTIONS: Record<string, { value: string; label: string; definition?: string }[]> = {
@@ -66,12 +70,18 @@ function eventKind(element: any): string {
   } as Record<string, string>)[definition] || "none";
 }
 
-export function BpmnEditor({ workflow, immutable, onSaved, onValidation, onError }: Props) {
+export function BpmnEditor({ workflow, immutable, onSaved, onValidation, onError, onOpenReport }: Props) {
   const container = useRef<HTMLDivElement | null>(null);
   const editor = useRef<any>(null);
   const [selected, setSelected] = useState<any>(null);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [presentation, setPresentation] = useState<Row | undefined>(workflow?.presentation);
+  useEffect(() => setPresentation(workflow?.presentation), [workflow?.presentation]);
+  const [bindings, setBindings] = useState<Row[]>([]);
+  const [, setProcessRevision] = useState(0);
+  const [ready, setReady] = useState(false);
+  useEffect(() => { api.testBindings().then(setBindings).catch(() => setBindings([])); }, []);
 
   useEffect(() => {
     if (!container.current || !workflow?.version?.bpmn_xml) return;
@@ -80,10 +90,16 @@ export function BpmnEditor({ workflow, immutable, onSaved, onValidation, onError
       : new Modeler({ container: container.current, keyboard: { bindTo: window } });
     editor.current = instance;
     let alive = true;
-    instance.importXML(workflow.version.bpmn_xml).then(({ warnings }: any) => {
+    instance.importXML(workflow.version.bpmn_xml).then(async ({ warnings }: any) => {
       if (!alive) return;
       instance.get("canvas").zoom("fit-viewport");
+      setReady(true);
       if (warnings?.length) onError(warnings.map((item: any) => item.message || String(item)).join(" · "));
+      if (needsSvgRepair(workflow.presentation)) {
+        const { svg } = await instance.saveSVG();
+        if (!alive) return;
+        setPresentation(await api.saveWorkflowSvg(workflow.version.id, svg, workflow.presentation.current_bpmn_sha256));
+      }
     }).catch((error: unknown) => onError(`Не вдалося відкрити BPMN XML: ${String(error)}`));
     const eventBus = instance.get("eventBus");
     const select = (event: any) => setSelected(event.newSelection?.[0] || null);
@@ -91,6 +107,7 @@ export function BpmnEditor({ workflow, immutable, onSaved, onValidation, onError
     if (!immutable) eventBus.on("commandStack.changed", () => setDirty(true));
     return () => {
       alive = false;
+      setReady(false);
       instance.destroy();
       editor.current = null;
       setSelected(null);
@@ -110,6 +127,19 @@ export function BpmnEditor({ workflow, immutable, onSaved, onValidation, onError
     editor.current.get("eventBus").fire("elements.changed", { elements: [selected] });
     setDirty(true);
     setSelected({ ...selected });
+  };
+  const processObject = (): any => {
+    const root = editor.current?.get("canvas").getRootElement()?.businessObject;
+    return root?.$type === "bpmn:Collaboration" ? root.participants?.[0]?.processRef : root;
+  };
+  const updateProcessExtension = (key: string, value: string) => {
+    const process = processObject();
+    if (!process || immutable) return;
+    process.$attrs ||= {};
+    if (value) process.$attrs[`aftertime:${key}`] = value;
+    else delete process.$attrs[`aftertime:${key}`];
+    setDirty(true);
+    setProcessRevision((revision) => revision + 1);
   };
   const changeEventKind = (kind: string) => {
     if (!editor.current || !selected || immutable) return;
@@ -141,8 +171,10 @@ export function BpmnEditor({ workflow, immutable, onSaved, onValidation, onError
     setSaving(true);
     try {
       const { xml } = await editor.current.saveXML({ format: true });
-      const saved = await api.saveWorkflowBpmn(workflow.version.id, xml);
+      const { svg } = await editor.current.saveSVG();
+      const saved = await api.saveWorkflowBpmn(workflow.version.id, xml, svg);
       setDirty(false);
+      setPresentation(saved.presentation);
       onValidation(saved.validation || saved.version?.validation || {});
       onSaved(saved);
     } catch (error) {
@@ -159,6 +191,8 @@ export function BpmnEditor({ workflow, immutable, onSaved, onValidation, onError
     <div className="native-bpmn-canvas" ref={container} />
     {!immutable && <div className="bpmn-save-strip">
       <span>{dirty ? "Є незбережені зміни" : "BPMN XML синхронізовано"}</span>
+      <span className={`svg-status ${presentation?.status || "missing"}`}>{svgStatusLabel(presentation)}</span>
+      {presentation?.status && presentation.status !== "missing" && <a href={api.workflowSvgUrl(workflow.version.id)} target="_blank" rel="noreferrer">SVG</a>}
       <button disabled={!dirty || saving} onClick={save}>{saving ? "Збереження…" : "Зберегти BPMN"}</button>
     </div>}
     {selected && <aside className="bpmn-properties">
@@ -168,9 +202,25 @@ export function BpmnEditor({ workflow, immutable, onSaved, onValidation, onError
       {!!eventOptions.length && <label>Тип події<select disabled={immutable} value={eventKind(selected)} onChange={(event) => changeEventKind(event.target.value)}>{eventOptions.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}</select></label>}
       {!!eventOptions.length && eventKind(selected) !== "none" && <label>Тригер / результат<input readOnly={immutable} value={attrs["aftertime:eventRef"] || ""} placeholder="Наприклад: repair.completed" onChange={(event) => updateExtension("eventRef", event.target.value)} /></label>}
       {/Task$|Activity$|SubProcess$/.test(type) && <><label>Об’єкт<input readOnly={immutable} value={attrs["aftertime:targetRef"] || ""} onChange={(event) => updateExtension("targetRef", event.target.value)} /></label><label>Дія / capability<input readOnly={immutable} value={attrs["aftertime:capability"] || ""} onChange={(event) => updateExtension("capability", event.target.value)} /></label></>}
+      {acceptsTestPhase(type) && <label>Фаза тесту<input readOnly={immutable} value={attrs["aftertime:testPhase"] || ""} placeholder="Наприклад: issue" list="bpmn-test-phases" onChange={(event) => updateExtension("testPhase", event.target.value)} /></label>}
       {type === "bpmn:BoundaryEvent" && <label className="check"><input type="checkbox" disabled={immutable} checked={selected.businessObject?.cancelActivity !== false} onChange={(event) => editor.current.get("modeling").updateProperties(selected, { cancelActivity: event.target.checked })} /> Переривати активну роботу</label>}
       <span>Використовуйте контекстне меню елемента для зміни типу задачі, gateway або події.</span>
     </aside>}
+    {!selected && ready && <aside className="bpmn-properties">
+      <small>ПРОЦЕС</small>
+      <b>{processObject()?.name || workflow.version.name}</b>
+      <label>Прив'язка тестів<select disabled={immutable} value={processObject()?.$attrs?.["aftertime:testBinding"] || ""} onChange={(event) => updateProcessExtension("testBinding", event.target.value)}>
+        <option value="">Без тестів</option>
+        {bindings.map((binding) => <option value={binding.id} key={binding.id}>{binding.title}</option>)}
+      </select></label>
+      {workflow.test && <ul className="test-coverage">
+        {workflow.test.phases.map((item: Row) => <li key={item.phase} className={item.element ? "covered" : "missing"}>{item.element ? "✓" : "✗"} {item.phase}{item.element ? ` → ${item.element}` : ""}</li>)}
+        {[...workflow.test.errors, ...workflow.test.warnings].map((message: string) => <li key={message} className="note">{message}</li>)}
+      </ul>}
+      {workflow.test && dirty && <span>Покриття оновиться після збереження.</span>}
+    </aside>}
+    {immutable && ready && workflow.test && <E2ePanel workflow={workflow} viewer={editor.current} onError={onError} onOpenReport={onOpenReport} />}
+    <datalist id="bpmn-test-phases">{phaseOptions(bindings, processObject()?.$attrs?.["aftertime:testBinding"]).map((phase) => <option value={phase} key={phase} />)}</datalist>
   </div>;
 }
 

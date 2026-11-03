@@ -17,6 +17,9 @@ import {
 import "@xyflow/react/dist/style.css";
 import { api, type PortContract, type Row, type Workspace } from "./api";
 import { BpmnCollaboration, BpmnEditor } from "./BpmnEditor";
+import { processCatalog } from "./testBindings";
+import { hasSystemModel, inPack, readStoredPack, selectablePacks, storePack } from "./packs";
+import { ReportsView } from "./ReportsView";
 import {
   EVENT_ACTION_LABELS,
   actionTargetKind,
@@ -147,7 +150,10 @@ const nodeTypes = { lab: GraphNode, workflow: BpmnNode, eventTrigger: EventTrigg
 export default function App() {
   const [w, setW] = useState<Workspace | null>(null),
     [projectId, setProjectId] = useState(""),
-    [mode, setMode] = useState<"model" | "process" | "events" | "participants">("model"),
+    [reportLaunchId, setReportLaunchId] = useState<string | null>(null),
+    [packs, setPacks] = useState<Row[]>([]),
+    [packId, setPackId] = useState<string>(readStoredPack),
+    [mode, setMode] = useState<"model" | "process" | "events" | "participants" | "reports">("model"),
     [viewVersion, setViewVersion] = useState<Row | null>(null),
     [graphRows, setGraphRows] = useState<Row[]>([]),
     [edgeRows, setEdgeRows] = useState<Row[]>([]),
@@ -232,6 +238,7 @@ export default function App() {
     try {
       const next = await api.workspace(projectId || undefined);
       setW(next);
+      api.packs().then(setPacks).catch(() => setPacks([]));
       setProjectId(next.project.id);
       setViewVersion(next.version);
       setGraphRows(next.nodes);
@@ -538,10 +545,15 @@ export default function App() {
       document.querySelector(".canvas")?.scrollIntoView({ behavior: "smooth", block: "center" });
     }, 0);
   }, [flow, graphRows]);
+  const currentPack = selectablePacks(packs).find((pack) => pack.id === packId);
+  useEffect(() => {
+    // A pack with processes only (no system model) opens straight in BPMN.
+    if (currentPack && !hasSystemModel(currentPack) && (mode === "model" || mode === "events" || mode === "participants")) setMode("process");
+  }, [currentPack, mode]);
   if (!w)
     return <div className="loading">MODEL LAB · завантаження… {error}</div>;
   return (
-    <main className="app-shell">
+    <main className={`app-shell ${mode === "reports" ? "reports-shell" : ""}`}>
       <header className="topbar">
         <div className="brand">
           <i />
@@ -563,9 +575,20 @@ export default function App() {
           </b>
         </div>
         <div className="model-tools">
-          <select aria-label="Проєкт" value={w.project.id} onChange={(event) => { setProjectId(event.target.value); setSelectedId(null); setSelectedEdgeId(null); }}>
-            {(w.projects || [w.project]).map((project: Row) => <option value={project.id} key={project.id}>{project.name}</option>)}
+          <select aria-label="Пакет моделі" className="pack-picker" value={currentPack?.id || ""} onChange={(event) => {
+            const next = packs.find((pack) => pack.id === event.target.value);
+            setPackId(event.target.value);
+            storePack(event.target.value);
+            setWorkflow(null);
+            if (!hasSystemModel(next)) setMode("process");
+            else if (next && !next.projects.includes(w.project.id)) setProjectId(next.projects[0]);
+          }}>
+            <option value="">Усі моделі</option>
+            {selectablePacks(packs).map((pack) => <option value={pack.id} key={pack.id}>{pack.title}</option>)}
           </select>
+          {hasSystemModel(currentPack) && <select aria-label="Проєкт" value={w.project.id} onChange={(event) => { setProjectId(event.target.value); setSelectedId(null); setSelectedEdgeId(null); }}>
+            {inPack(w.projects || [w.project], currentPack, "projects", (project: Row) => project.id).map((project: Row) => <option value={project.id} key={project.id}>{project.name}</option>)}
+          </select>}
           <select aria-label="Модель" value={viewVersion?.id || w.version.id} onChange={async (event) => {
             const modelVersionId = event.target.value;
             const linkedScenario = scenarioForModel(w.scenarios, modelVersionId);
@@ -595,13 +618,14 @@ export default function App() {
           <button onClick={async () => {
             const name = window.prompt("Назва нової моделі");
             if (!name) return;
-            const created = await api.createProject({ name, version_name: name });
+            const created = await api.createProject({ name, version_name: name, pack_id: currentPack?.id });
             setProjectId(created.project.id);
           }}>＋ Нова модель</button>
         </div>
         <div className="mode-switch">
           <button
             className={mode === "model" ? "active" : ""}
+            disabled={!hasSystemModel(currentPack)}
             onClick={() => {
               setMode("model");
               setSelectedId(null);
@@ -620,6 +644,7 @@ export default function App() {
           </button>
           <button
             className={mode === "events" ? "active" : ""}
+            disabled={!hasSystemModel(currentPack)}
             onClick={() => {
               setMode("events");
               setSelectedId(null);
@@ -632,6 +657,7 @@ export default function App() {
           </button>
           <button
             className={mode === "participants" ? "active" : ""}
+            disabled={!hasSystemModel(currentPack)}
             onClick={() => {
               setMode("participants");
               setSelectedId(null);
@@ -639,6 +665,15 @@ export default function App() {
             }}
           >
             Учасники та процеси
+          </button>
+          <button
+            className={mode === "reports" ? "active" : ""}
+            onClick={() => {
+              setReportLaunchId(null);
+              setMode("reports");
+            }}
+          >
+            Звіти
           </button>
         </div>
         <div className="version">
@@ -673,8 +708,19 @@ export default function App() {
           <button onClick={() => setError("")}>×</button>
         </div>
       )}
-      <section className={`workbench ${mode === "participants" ? "participant-workbench" : ""}`}>
-        {mode === "participants" ? <ParticipantProcessTable
+      <section className={`workbench ${mode === "participants" || mode === "reports" ? "participant-workbench" : ""}`}>
+        {mode === "reports" ? <ReportsView
+          initialLaunchId={reportLaunchId}
+          onError={setError}
+          onOpenProcess={async (binding) => {
+            const target = processCatalog(w?.workflows || []).find((item) =>
+              item.bpmn_xml?.includes(`aftertime:testBinding="${binding}"`));
+            if (!target) { setError(`Процес із прив'язкою «${binding}» не знайдено`); return; }
+            setWorkflow(await api.workflow(target.id));
+            setValidation(null);
+            setMode("process");
+          }}
+        /> : mode === "participants" ? <ParticipantProcessTable
           data={assembly}
           onOpenWorkflow={async (versionId) => {
             setWorkflow(await api.workflow(versionId));
@@ -763,6 +809,24 @@ export default function App() {
                 </button>
               </>
             )}
+            {mode === "process" && w && (
+              <select
+                className="process-picker"
+                value={workflow?.version?.id || ""}
+                onChange={async (event) => {
+                  if (!event.target.value) return;
+                  setWorkflow(await api.workflow(event.target.value));
+                  setValidation(null);
+                }}
+              >
+                <option value="">Оберіть процес…</option>
+                {processCatalog(inPack(w.workflows, currentPack, "workflows", (row: Row) => row.workflow_id)).map((item) => (
+                  <option value={item.id} key={item.id}>
+                    {item.tested ? "✓ E2E · " : ""}{item.name} · v{item.version}
+                  </option>
+                ))}
+              </select>
+            )}
             <span>{mode === "process" ? "BPMN 2.0 · " : ""}{immutable ? "Immutable snapshot · " : "Draft · "}{mode === "events" ? `${eventPrograms.length} програм · ${selectedProgram?.actions?.length || 0} дій` : `${nodes.length} вузлів · ${edges.length} зв’язків`}</span>
           </div>
           {mode === "process" && workflow ? <BpmnEditor
@@ -771,6 +835,10 @@ export default function App() {
             onSaved={setWorkflow}
             onValidation={setValidation}
             onError={setError}
+            onOpenReport={(launchId) => {
+              setReportLaunchId(launchId);
+              setMode("reports");
+            }}
           /> : <ReactFlow
             onInit={setFlow}
             nodes={nodes}
@@ -892,7 +960,7 @@ export default function App() {
         />}
         </>}
       </section>
-      <Monitor
+      {mode !== "reports" && <Monitor
         w={{ ...w, observables }}
         graphRows={graphRows}
         run={run}
@@ -903,7 +971,7 @@ export default function App() {
         setRun={setRun}
         selectedNodeId={selectedId}
         focusNode={focusGraphNode}
-      />
+      />}
       {busy && <div className="busy">ОБРОБКА…</div>}
     </main>
   );

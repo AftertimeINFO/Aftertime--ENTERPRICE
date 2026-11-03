@@ -153,6 +153,7 @@ class LabProject(Base):
     description: Mapped[str] = mapped_column(Text, default="")
     active_draft_id: Mapped[str | None] = mapped_column(String(80))
     published_version_id: Mapped[str | None] = mapped_column(String(80))
+    pack_id: Mapped[str | None] = mapped_column(String(80), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -394,6 +395,21 @@ class LabWorkflow(Base):
     id: Mapped[str] = mapped_column(String(80), primary_key=True, default=new_id)
     name: Mapped[str] = mapped_column(String(200), index=True)
     description: Mapped[str] = mapped_column(Text, default="")
+    pack_id: Mapped[str | None] = mapped_column(String(80), index=True)
+
+
+class LabPack(Base):
+    """A domain model pack installed into this Aftertime (energy, rental, …)."""
+
+    __tablename__ = "lab_packs"
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    title: Mapped[str] = mapped_column(String(240))
+    version: Mapped[str] = mapped_column(String(40), default="0")
+    description: Mapped[str] = mapped_column(Text, default="")
+    source: Mapped[str] = mapped_column(Text, default="")
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    report: Mapped[dict] = mapped_column(JSONB, default=dict)
+    installed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class LabWorkflowVersion(Base):
@@ -411,6 +427,118 @@ class LabWorkflowVersion(Base):
     settings: Mapped[dict] = mapped_column(JSONB, default=dict)
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     __table_args__ = (UniqueConstraint("workflow_id", "version", name="uq_lab_workflow_version"),)
+
+
+class LabWorkflowPresentation(Base):
+    """SVG drawing of a workflow version; kept apart so workflow rows stay small."""
+
+    __tablename__ = "lab_workflow_presentations"
+    workflow_version_id: Mapped[str] = mapped_column(
+        ForeignKey("lab_workflow_versions.id", ondelete="CASCADE"), primary_key=True
+    )
+    svg: Mapped[str] = mapped_column(Text, default="")
+    bpmn_sha256: Mapped[str] = mapped_column(String(64), default="")
+    report: Mapped[dict] = mapped_column(JSONB, default=dict)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class LabE2eRun(Base):
+    """An end-to-end test run of a bound process, executed by the external bridge."""
+
+    __tablename__ = "lab_e2e_runs"
+    id: Mapped[str] = mapped_column(String(80), primary_key=True, default=new_id)
+    workflow_version_id: Mapped[str | None] = mapped_column(
+        ForeignKey("lab_workflow_versions.id", ondelete="CASCADE"), index=True
+    )
+    # "binding": the test case bound to a BPMN process; "center": suites or cases chosen by hand.
+    kind: Mapped[str] = mapped_column(String(20), default="binding")
+    target: Mapped[dict] = mapped_column(JSONB, default=dict)
+    progress: Mapped[dict | None] = mapped_column(JSONB)
+    binding: Mapped[str] = mapped_column(String(120))
+    status: Mapped[str] = mapped_column(String(20), default="queued", index=True)
+    center_job_id: Mapped[str | None] = mapped_column(String(80))
+    queue_ahead: Mapped[int | None] = mapped_column(Integer)
+    states: Mapped[list] = mapped_column(JSONB, default=list)
+    log: Mapped[list] = mapped_column(JSONB, default=list)
+    folder: Mapped[str | None] = mapped_column(Text)
+    error: Mapped[str | None] = mapped_column(Text)
+    stop_requested: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ReportLaunch(Base):
+    """One imported set of test results in the Allure results format."""
+
+    __tablename__ = "report_launches"
+    id: Mapped[str] = mapped_column(String(80), primary_key=True, default=new_id)
+    name: Mapped[str] = mapped_column(String(200), unique=True)
+    executor: Mapped[dict] = mapped_column(JSONB, default=dict)
+    environment: Mapped[dict] = mapped_column(JSONB, default=dict)
+    categories: Mapped[list] = mapped_column(JSONB, default=list)
+    stats: Mapped[dict] = mapped_column(JSONB, default=dict)
+    start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    stop: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    e2e_run_id: Mapped[str | None] = mapped_column(String(80), index=True)
+    imported_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ReportArchivedTest(Base):
+    """A test hidden from the latest results (removed or renamed in the test suite)."""
+
+    __tablename__ = "report_archived_tests"
+    history_id: Mapped[str] = mapped_column(String(200), primary_key=True)
+    name: Mapped[str] = mapped_column(Text, default="")
+    archived_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class CenterSnapshot(Base):
+    """Latest state of the external E2E control center, pushed by the bridge."""
+
+    __tablename__ = "center_snapshots"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default="center")
+    data: Mapped[dict] = mapped_column(JSONB, default=dict)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ReportResult(Base):
+    __tablename__ = "report_results"
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    launch_id: Mapped[str] = mapped_column(ForeignKey("report_launches.id", ondelete="CASCADE"), index=True)
+    history_id: Mapped[str] = mapped_column(String(200), index=True)
+    full_name: Mapped[str] = mapped_column(Text, default="")
+    name: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(20), index=True)
+    parent_suite: Mapped[str] = mapped_column(Text, default="")
+    suite: Mapped[str] = mapped_column(Text, default="")
+    sub_suite: Mapped[str] = mapped_column(Text, default="")
+    category: Mapped[str | None] = mapped_column(Text)
+    message: Mapped[str] = mapped_column(Text, default="")
+    start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    duration_ms: Mapped[int] = mapped_column(Integer, default=0)
+    data: Mapped[dict] = mapped_column(JSONB, default=dict)
+
+
+class ReportAttachment(Base):
+    __tablename__ = "report_attachments"
+    source: Mapped[str] = mapped_column(String(200), primary_key=True)
+    content_type: Mapped[str] = mapped_column(String(120), default="application/octet-stream")
+    size: Mapped[int] = mapped_column(Integer, default=0)
+    stored: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class LabE2eFrame(Base):
+    """A screen frame of the machine under test, taken during an E2E run."""
+
+    __tablename__ = "lab_e2e_frames"
+    id: Mapped[str] = mapped_column(String(80), primary_key=True, default=new_id)
+    run_id: Mapped[str] = mapped_column(ForeignKey("lab_e2e_runs.id", ondelete="CASCADE"), index=True)
+    captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    phase: Mapped[str | None] = mapped_column(String(80))
+    size: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class LabWorkflowDefinitionBackup(Base):

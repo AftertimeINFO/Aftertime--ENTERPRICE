@@ -1,4 +1,4 @@
-.PHONY: up down build logs test sync reset
+.PHONY: up down build logs test sync reset export-models check-models
 
 up:
 	docker compose up --build -d
@@ -20,3 +20,9 @@ sync:
 
 reset:
 	docker compose down -v
+
+export-models:
+	python tools/models.py export
+
+check-models:
+	python tools/models.py check

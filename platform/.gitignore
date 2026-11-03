@@ -1,4 +1,8 @@
 .env
+*.env
+!*.env.example
+bindings.json
+!config.example/**
 __pycache__/
 .pytest_cache/
 .ruff_cache/

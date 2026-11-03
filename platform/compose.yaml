@@ -38,6 +38,16 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://aftertime:aftertime-local@postgres:5432/aftertime}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       API_CORS_ORIGINS: ${API_CORS_ORIGINS:-http://localhost:8080,http://localhost:8083,http://localhost:5173}
+      AFTERTIME_CONFIG_DIR: /config
+      AFTERTIME_PACKS_DIR: /packs
+      REPORTS_DIR: /data/reports
+    volumes:
+      # Organization settings; the public example is used unless AFTERTIME_CONFIG_DIR is set in .env.
+      - ${AFTERTIME_CONFIG_DIR:-./config.example}:/config:ro
+      # Model packs: every sub-directory with aftertime-pack.json (the example pack by default).
+      - ${AFTERTIME_PACKS_DIR:-./packs.example}:/packs:ro
+      # Attachments of imported test reports (screenshots, videos, logs).
+      - reports_data:/data/reports
     command: ["/app/docker-entrypoint.sh", "api"]
     depends_on:
       postgres:
@@ -94,3 +104,4 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  reports_data:

@@ -2,10 +2,16 @@
 
 ## Git workflow
 
-Keep only `main` and `DEV` branches. Develop on `DEV`, validate changes,
-then merge into `main`. Do not create task-specific branches. Track
-`origin/main` and `origin/DEV`; do not force-push shared history.
-See `docs/en/GIT_WORKFLOW.md` and `docs/uk/GIT_WORKFLOW.md`.
+This is the `Aftertime--ENTERPRICE` fork (owner decision, 2026-11-03).
+Keep only `main` and `DEVE` branches. Develop on `DEVE`, validate changes,
+then merge into `main`; `main` is used for deployment. Do not create
+task-specific branches. Track `origin/main` and `origin/DEVE`; the original
+repository is the `upstream` remote. Do not force-push shared history.
+
+This repository is public and holds mechanisms only. Organization settings,
+process models, stand paths and specifications belong to the private
+`Aftertime-config--ENTERPRICE` repository. See
+`docs/uk/ENTERPRISE_ARCHITECTURE.md`.
 
 `platform/` is the current modeling system. `prototype/` is tracked in this
 same repository, not a separate Git checkout or submodule.

@@ -13,6 +13,9 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    # 0001 builds current metadata on a clean install; keep replay safe until 0001 is frozen.
+    if sa.inspect(op.get_bind()).has_table("lab_process_sets"):
+        return
     op.create_table(
         "lab_process_sets",
         sa.Column("id", sa.String(80), primary_key=True),
