@@ -132,16 +132,21 @@ def execute(
         sink({"type": "error", "message": f"Прив'язку «{run['binding']}» не знайдено в налаштуваннях мосту"})
         return
     should_stop = lambda: sink.stop_requested  # noqa: E731
-    if simulation is not None:
-        sink({"type": "queued", "job": f"simulation-{run['id'][:8]}", "ahead": 0})
-        simulate(binding, f"simulation-{run['id'][:8]}", sink, should_stop=should_stop, **simulation)
-        return
     started = datetime.now()
+    # The screen is recorded for simulations too: the phases are timed, the screen is real.
     screen = ScreenRecorder(settings.screen_command, lambda jpeg, at: sink.aftertime.frame(run["id"], jpeg, at),
                             settings.screen_seconds) if settings.screen_command else None
+    if screen:
+        screen.start()
+    if simulation is not None:
+        try:
+            sink({"type": "queued", "job": f"simulation-{run['id'][:8]}", "ahead": 0})
+            simulate(binding, f"simulation-{run['id'][:8]}", sink, should_stop=should_stop, **simulation)
+        finally:
+            if screen:
+                screen.close()
+        return
     try:
-        if screen:
-            screen.start()
         busy = center.busy()
         job_id = center.run(binding.cases, f"Aftertime · {binding.title}", suites=list(target.get("suites") or []),
                             dry_run=bool(target.get("dryRun")), stop_on_failure=bool(target.get("stopOnFailure")))

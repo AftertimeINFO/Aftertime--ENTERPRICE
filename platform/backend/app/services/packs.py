@@ -115,3 +115,21 @@ def run_installer(pack: Pack, db: Any) -> Any:
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module.install(db, pack)
+
+
+def site_settings() -> dict[str, Any]:
+    """Organization settings of this installation: ``$AFTERTIME_CONFIG_DIR/aftertime.json``.
+
+    ``defaultPack`` — the modelling contour opened first; ``defaultProcess`` — the process shown
+    first in a contour without a system model.  ``AFTERTIME_DEFAULT_PACK`` overrides the file.
+    """
+    file = Path(os.environ.get("AFTERTIME_CONFIG_DIR", "/config")) / "aftertime.json"
+    data: dict[str, Any] = {}
+    if file.exists():
+        try:
+            loaded = json.loads(file.read_text(encoding="utf-8"))
+            data = loaded if isinstance(loaded, dict) else {}
+        except json.JSONDecodeError:
+            data = {}
+    pack = os.environ.get("AFTERTIME_DEFAULT_PACK") or data.get("defaultPack") or ""
+    return {"default_pack": str(pack), "default_process": str(data.get("defaultProcess") or "")}

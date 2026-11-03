@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.models import LabPack, LabProject, LabWorkflow
 from app.pack_install import install_pack
-from app.services.packs import discover
+from app.services.packs import discover, site_settings
 
 router = APIRouter(prefix="/api/v1/lab/packs", tags=["packs"])
 
@@ -65,3 +65,12 @@ def update(pack_id: str, body: dict[str, Any], db: Session = Depends(get_db)) ->
         row.enabled = bool(body["enabled"])
     db.commit()
     return {"id": row.id, "enabled": row.enabled}
+
+
+settings_router = APIRouter(prefix="/api/v1/lab", tags=["packs"])
+
+
+@settings_router.get("/settings")
+def settings() -> dict[str, Any]:
+    """Which contour and process the interface opens first."""
+    return site_settings()

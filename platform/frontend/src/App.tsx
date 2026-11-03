@@ -18,7 +18,7 @@ import "@xyflow/react/dist/style.css";
 import { api, type PortContract, type Row, type Workspace } from "./api";
 import { BpmnCollaboration, BpmnEditor } from "./BpmnEditor";
 import { processCatalog } from "./testBindings";
-import { hasSystemModel, inPack, readStoredPack, selectablePacks, storePack } from "./packs";
+import { defaultProcess, hasSystemModel, inPack, readStoredPack, selectablePacks, storePack } from "./packs";
 import { ReportsView } from "./ReportsView";
 import {
   EVENT_ACTION_LABELS,
@@ -152,7 +152,8 @@ export default function App() {
     [projectId, setProjectId] = useState(""),
     [reportLaunchId, setReportLaunchId] = useState<string | null>(null),
     [packs, setPacks] = useState<Row[]>([]),
-    [packId, setPackId] = useState<string>(readStoredPack),
+    [packId, setPackId] = useState<string>(() => readStoredPack() ?? ""),
+    [siteSettings, setSiteSettings] = useState<Row | null>(null),
     [mode, setMode] = useState<"model" | "process" | "events" | "participants" | "reports">("model"),
     [viewVersion, setViewVersion] = useState<Row | null>(null),
     [graphRows, setGraphRows] = useState<Row[]>([]),
@@ -546,6 +547,21 @@ export default function App() {
     }, 0);
   }, [flow, graphRows]);
   const currentPack = selectablePacks(packs).find((pack) => pack.id === packId);
+  const processOnly = !!currentPack && !hasSystemModel(currentPack);
+  useEffect(() => {
+    // Without a choice made in this tab, open the contour named in the settings.
+    api.settings().then((settings) => {
+      setSiteSettings(settings);
+      if (readStoredPack() === null && settings.default_pack) setPackId(settings.default_pack);
+    }).catch(() => setSiteSettings({}));
+  }, []);
+  useEffect(() => {
+    // A contour of processes opens straight on its default process.
+    if (!processOnly || mode !== "process" || workflow || !w) return;
+    const workflowId = defaultProcess(currentPack, siteSettings?.default_process || "");
+    const version = processCatalog(w.workflows).find((item) => item.workflow_id === workflowId);
+    if (version) api.workflow(version.id).then(setWorkflow).catch((error) => setError(String(error)));
+  }, [processOnly, mode, workflow, w, currentPack, siteSettings]);
   useEffect(() => {
     // A pack with processes only (no system model) opens straight in BPMN.
     if (currentPack && !hasSystemModel(currentPack) && (mode === "model" || mode === "events" || mode === "participants")) setMode("process");
@@ -553,7 +569,7 @@ export default function App() {
   if (!w)
     return <div className="loading">MODEL LAB · завантаження… {error}</div>;
   return (
-    <main className={`app-shell ${mode === "reports" ? "reports-shell" : ""}`}>
+    <main className={`app-shell ${mode === "reports" || processOnly ? "reports-shell" : ""}`}>
       <header className="topbar">
         <div className="brand">
           <i />
@@ -708,7 +724,7 @@ export default function App() {
           <button onClick={() => setError("")}>×</button>
         </div>
       )}
-      <section className={`workbench ${mode === "participants" || mode === "reports" ? "participant-workbench" : ""}`}>
+      <section className={`workbench ${mode === "participants" || mode === "reports" ? "participant-workbench" : ""} ${processOnly && mode === "process" ? "process-only" : ""}`}>
         {mode === "reports" ? <ReportsView
           initialLaunchId={reportLaunchId}
           onError={setError}
@@ -960,7 +976,7 @@ export default function App() {
         />}
         </>}
       </section>
-      {mode !== "reports" && <Monitor
+      {mode !== "reports" && !processOnly && <Monitor
         w={{ ...w, observables }}
         graphRows={graphRows}
         run={run}

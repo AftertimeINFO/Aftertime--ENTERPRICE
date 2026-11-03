@@ -84,3 +84,15 @@ def test_install_imports_publishes_and_owns_processes_idempotently(packs_root):
             if row:
                 db.delete(row)
             db.commit()
+
+
+def test_settings_name_the_default_contour(tmp_path, monkeypatch):
+    from app.api.packs import settings
+
+    monkeypatch.setenv("AFTERTIME_CONFIG_DIR", str(tmp_path))
+    monkeypatch.delenv("AFTERTIME_DEFAULT_PACK", raising=False)
+    assert settings() == {"default_pack": "", "default_process": ""}
+    (tmp_path / "aftertime.json").write_text(json.dumps({"defaultPack": "rental", "defaultProcess": "rental-issue"}), encoding="utf-8")
+    assert settings() == {"default_pack": "rental", "default_process": "rental-issue"}
+    monkeypatch.setenv("AFTERTIME_DEFAULT_PACK", "energy")
+    assert settings()["default_pack"] == "energy"

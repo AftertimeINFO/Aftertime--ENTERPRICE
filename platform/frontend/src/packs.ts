@@ -19,10 +19,21 @@ export function hasSystemModel(pack: Row | undefined): boolean {
   return !pack || !!pack.projects?.length;
 }
 
-export function readStoredPack(): string {
-  try { return window.localStorage.getItem(PACK_STORAGE_KEY) || ""; } catch { return ""; }
+/**
+ * The contour chosen in this browser tab, or null when nothing was chosen yet.
+ * Kept per tab only: opening Aftertime again starts from the configured default contour.
+ */
+export function readStoredPack(): string | null {
+  try { return window.sessionStorage.getItem(PACK_STORAGE_KEY); } catch { return null; }
 }
 
 export function storePack(id: string): void {
-  try { window.localStorage.setItem(PACK_STORAGE_KEY, id); } catch { /* private mode: the choice is just not remembered */ }
+  try { window.sessionStorage.setItem(PACK_STORAGE_KEY, id); } catch { /* private mode: the choice is just not remembered */ }
+}
+
+/** The process a contour opens with: the configured one if it is in the contour, else its first. */
+export function defaultProcess(pack: Row | undefined, configured: string): string | null {
+  const workflows: string[] = pack?.workflows || [];
+  if (!workflows.length) return null;
+  return workflows.includes(configured) ? configured : workflows[0];
 }
