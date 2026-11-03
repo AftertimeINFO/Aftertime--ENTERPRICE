@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type Row } from "./api";
 import { isActive, runStatusLabel } from "./e2eRun";
+import { VmScreen } from "./VmScreen";
 import { STATUS_LABELS, formatDuration } from "./reports";
 import { launchTitle, needsSummary, progressView } from "./launch";
 
@@ -100,6 +101,7 @@ export function LaunchPanel({ onOpenLaunch, onError }: Props) {
           <ol className="launch-suites">{(current.progress?.suites || []).map((suite: Row) =>
             <li key={suite.id} className={suite.state}>{suite.title} <small>{suite.state}</small></li>)}</ol>
         </>}
+        <VmScreen runId={current.id} active={isActive(current)} />
         {lines.length > 0 && <pre className="e2e-log">{lines.slice(-60).join("\n")}</pre>}
         {!!current.report_launch_ids?.length && <div className="links">{current.report_launch_ids.map((id: string) =>
           <button key={id} className="link" onClick={() => onOpenLaunch(id)}>Звіт запуску</button>)}</div>}

@@ -42,3 +42,8 @@ export function phaseSummary(run: Row | undefined): string {
   const passed = states.filter((item: Row) => item.state === "passed").length;
   return `${passed}/${states.length} фаз`;
 }
+
+/** Index of the first frame taken while the phase was running (or ended in it), -1 if none. */
+export function firstFrameOfPhase(frames: Row[], phase: string): number {
+  return frames.findIndex((frame) => frame.phase === phase);
+}

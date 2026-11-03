@@ -33,3 +33,13 @@ describe("E2E run on the diagram", () => {
     expect(phaseSummary({ states: [{ state: "passed" }, { state: "active" }] })).toBe("1/2 фаз");
   });
 });
+
+describe("VM screen frames", () => {
+  it("finds the first frame of a phase", async () => {
+    const { firstFrameOfPhase } = await import("./e2eRun");
+    const frames = [{ phase: null }, { phase: "order" }, { phase: "order" }, { phase: "issue" }];
+    expect(firstFrameOfPhase(frames, "order")).toBe(1);
+    expect(firstFrameOfPhase(frames, "issue")).toBe(3);
+    expect(firstFrameOfPhase(frames, "pay")).toBe(-1);
+  });
+});

@@ -27,6 +27,8 @@ class Settings:
     aftertime_url: str = ""
     results_root: Path | None = None
     packs_dir: Path | None = None
+    screen_command: str = ""
+    screen_seconds: float = 3
     live_command: str = ""
     poll_seconds: float = 5
     live_seconds: float = 20
@@ -46,6 +48,8 @@ class Settings:
             aftertime_url=values.get("AFTERTIME_API_URL", "http://localhost:8000/api/v1"),
             results_root=Path(values["RESULTS_ROOT"]) if values.get("RESULTS_ROOT") else None,
             packs_dir=Path(values["PACKS_DIR"]) if values.get("PACKS_DIR") else None,
+            screen_command=values.get("SCREEN_COMMAND", ""),
+            screen_seconds=float(values.get("SCREEN_SECONDS", 3)),
             live_command=values.get("LIVE_COMMAND", ""),
             poll_seconds=float(values.get("POLL_SECONDS", 5)),
             live_seconds=float(values.get("LIVE_SECONDS", 20)),

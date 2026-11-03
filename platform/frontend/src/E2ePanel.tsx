@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type Row } from "./api";
+import { VmScreen } from "./VmScreen";
 import { E2E_MARKERS, elementMarkers, isActive, phaseSummary, runStatusLabel } from "./e2eRun";
 
 type Props = {
@@ -16,6 +17,7 @@ export function E2ePanel({ workflow, viewer, onError, onOpenReport }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [run, setRun] = useState<Row | undefined>();
   const [lines, setLines] = useState<string[]>([]);
+  const [focusPhase, setFocusPhase] = useState<string | null>(null);
   const next = useRef(0);
   const painted = useRef<string[]>([]);
 
@@ -82,10 +84,11 @@ export function E2ePanel({ workflow, viewer, onError, onOpenReport }: Props) {
     </header>
     <div className={`e2e-status ${run?.status || "none"}`}>{runStatusLabel(run)}{run ? ` · ${phaseSummary(run)}` : ""}</div>
     {!!run?.states?.length && <ol className="e2e-phases">
-      {run.states.map((item: Row) => <li key={item.phase} className={`e2e-${item.state}`} title={item.detail || item.evidence || ""}>
+      {run.states.map((item: Row) => <li key={item.phase} className={`e2e-${item.state}`} title={item.detail || item.evidence || "Показати екран VM у цій фазі"} onClick={() => setFocusPhase(item.phase)}>
         {item.phase}{item.inferred && item.state === "passed" ? " ·" : ""}
       </li>)}
     </ol>}
+    {run && <VmScreen runId={run.id} active={isActive(run)} focusPhase={focusPhase} />}
     {lines.length > 0 && <pre className="e2e-log">{lines.slice(-40).join("\n")}</pre>}
     {run?.report_launch_id && onOpenReport && <button className="link" onClick={() => onOpenReport(run.report_launch_id)}>Відкрити звіт прогону</button>}
     {run?.folder && <span className="e2e-folder">Тека запуску: {run.folder}</span>}

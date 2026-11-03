@@ -1739,3 +1739,14 @@ pre {
 .archived-toggle { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; color: var(--muted); }
 .pack-picker { max-width: 200px; border-color: var(--cyan) !important; color: var(--cyan); }
 .mode-switch button:disabled { opacity: .35; cursor: not-allowed; }
+
+/* Screen of the machine under test */
+.vm-screen { display: grid; gap: 6px; }
+.vm-screen header { display: flex; align-items: baseline; gap: 8px; }
+.vm-screen header small { color: var(--cyan); letter-spacing: .14em; font-size: 8px; }
+.vm-screen header span { flex: 1; color: var(--muted); font-size: 10px; }
+.vm-screen img { display: block; width: 100%; border: 1px solid var(--line); border-radius: 3px; background: #000; }
+.vm-screen.empty { color: var(--muted); font-size: 10px; }
+.vm-screen input[type=range] { width: 100%; }
+.e2e-panel:has(.vm-screen.large) { width: min(900px, calc(100% - 36px)); max-height: 92%; }
+.e2e-phases li { cursor: pointer; }

@@ -36,6 +36,21 @@ python -m e2e_bridge import-results FOLDER...    # теки allure-results → �
 python -m e2e_bridge sync-results [ROOT]         # усі запуски з RESULTS_ROOT
 ```
 
+## Екран машини під час прогону
+
+`SCREEN_COMMAND` у `bridge.env` — команда з `-Action start|frame|stop`; `frame` пише останній
+JPEG у файл `BRIDGE_FRAME_OUT`. Міст запускає захоплення на старті прогону, раз на
+`SCREEN_SECONDS` (типово 3) передає кадр в Aftertime (`POST /lab/e2e-runs/{id}/frames`), а після
+завершення робить останній кадр і зупиняє захоплення. Aftertime записує з кадром поточну фазу й
+не зберігає однакові кадри поспіль.
+
+Інструменти в `tools/`:
+
+- `session-screen.ps1` — захоплення екрана інтерактивного сеансу Windows зсередини машини
+  (лише читає екран); для машин, де тести працюють у віддаленому чи розширеному сеансі;
+- `hyperv-screen.ps1` — знімок консолі VM Hyper-V з хоста, без змін у VM; не бачить розширених
+  (RDP/VMBus) сеансів, тож підходить, коли тести працюють у консолі.
+
 `bridge.env` додатково має `AFTERTIME_API_URL` (API Aftertime) і `RESULTS_ROOT` (тека з
 підтеками `allure-results`). Після прогону з Aftertime міст сам імпортує результати цього
 прогону у звіти. Підтеки з `_` на початку (злиті подання) не імпортуються.

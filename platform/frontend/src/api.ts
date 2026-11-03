@@ -39,6 +39,8 @@ export const api = {
   e2eRuns: (version: string) => request<Row[]>(`/lab/workflows/${version}/e2e-runs`),
   startE2eRun: (version: string) => request<Row>(`/lab/workflows/${version}/e2e-runs`, json("POST")),
   e2eRun: (id: string, start = 0) => request<Row>(`/lab/e2e-runs/${id}?start=${start}`),
+  e2eFrames: (id: string) => request<Row[]>(`/lab/e2e-runs/${id}/frames`),
+  e2eFrameUrl: (id: string) => `${API}/lab/e2e-frames/${encodeURIComponent(id)}`,
   stopE2eRun: (id: string) => request<Row>(`/lab/e2e-runs/${id}/stop`, json("POST")),
   reportLaunches: () => request<Row[]>("/lab/reports/launches"),
   reportOverview: (launchId?: string, includeArchived = false) => request<Row>(`/lab/reports/overview?${new URLSearchParams({ ...(launchId ? { launch_id: launchId } : {}), ...(includeArchived ? { include_archived: "true" } : {}) })}`),

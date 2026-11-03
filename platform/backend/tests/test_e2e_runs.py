@@ -104,3 +104,32 @@ def test_only_published_and_fully_covered_processes_can_run(bindings):
         assert draft.value.status_code == 409
         db.delete(db.get(LabWorkflow, created["version"]["workflow_id"]))
         db.commit()
+
+
+@pytest.mark.anyio
+async def test_frames_record_the_running_phase_and_skip_identical_screens(published, tmp_path, monkeypatch):
+    from app.api.e2e import add_frame, frame_image, frames
+
+    monkeypatch.setenv("REPORTS_DIR", str(tmp_path))
+
+    class Body:
+        def __init__(self, data, at):
+            self.data, self.headers = data, {"x-captured-at": at}
+
+        async def body(self):
+            return self.data
+
+    with SessionLocal() as db:
+        run = start_e2e_run(published, db)
+        e2e_run_events(run["id"], {"events": [{"type": "phase", "phase": "order", "state": "active"}]}, db)
+        first = await add_frame(run["id"], Body(bytes([0xFF, 0xD8]) + b"one", "2026-11-04T10:00:00+00:00"), db)
+        same = await add_frame(run["id"], Body(bytes([0xFF, 0xD8]) + b"one", "2026-11-04T10:00:03+00:00"), db)
+        e2e_run_events(run["id"], {"events": [{"type": "phase", "phase": "order", "state": "passed"},
+                                              {"type": "phase", "phase": "issue", "state": "active"}]}, db)
+        second = await add_frame(run["id"], Body(bytes([0xFF, 0xD8]) + b"two", "2026-11-04T10:00:06+00:00"), db)
+        assert first["phase"] == "order" and same == {"stored": False} and second["phase"] == "issue"
+        assert [item["phase"] for item in frames(run["id"], db)] == ["order", "issue"]
+        assert frame_image(first["id"], db).media_type == "image/jpeg"
+        with pytest.raises(HTTPException):
+            await add_frame(run["id"], Body(b"not a jpeg", "2026-11-04T10:00:09+00:00"), db)
+        stop_e2e_run(run["id"], db)

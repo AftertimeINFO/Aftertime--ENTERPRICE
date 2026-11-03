@@ -530,6 +530,17 @@ class ReportAttachment(Base):
     stored: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
+class LabE2eFrame(Base):
+    """A screen frame of the machine under test, taken during an E2E run."""
+
+    __tablename__ = "lab_e2e_frames"
+    id: Mapped[str] = mapped_column(String(80), primary_key=True, default=new_id)
+    run_id: Mapped[str] = mapped_column(ForeignKey("lab_e2e_runs.id", ondelete="CASCADE"), index=True)
+    captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    phase: Mapped[str | None] = mapped_column(String(80))
+    size: Mapped[int] = mapped_column(Integer, default=0)
+
+
 class LabWorkflowDefinitionBackup(Base):
     __tablename__ = "lab_workflow_definition_backups"
     id: Mapped[str] = mapped_column(String(80), primary_key=True, default=new_id)

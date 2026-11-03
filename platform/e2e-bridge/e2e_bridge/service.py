@@ -13,6 +13,7 @@ from e2e_bridge.center import Center, CenterError
 from e2e_bridge.phases import PASSED, Proof, changes, phase_states
 from e2e_bridge.results import Uploader, launches_since, newest_launch_for
 from e2e_bridge.runner import Binding, Settings, follow
+from e2e_bridge.screen import ScreenRecorder
 
 
 class Aftertime:
@@ -36,6 +37,14 @@ class Aftertime:
 
     def push_state(self, state: dict[str, Any]) -> None:
         self._call("POST", "/lab/center/state", state)
+
+    def frame(self, run_id: str, jpeg: bytes, captured_at: str) -> None:
+        request = urllib.request.Request(
+            f"{self.url}/lab/e2e-runs/{run_id}/frames", method="POST", data=jpeg,
+            headers={"Content-Type": "image/jpeg", "X-Captured-At": captured_at},
+        )
+        with urllib.request.urlopen(request, timeout=self.timeout) as response:
+            response.read()
 
     def report(self, run_id: str, events: list[dict[str, Any]]) -> dict[str, Any]:
         return self._call("POST", f"/lab/e2e-runs/{run_id}/events", {"events": events})
@@ -128,7 +137,11 @@ def execute(
         simulate(binding, f"simulation-{run['id'][:8]}", sink, should_stop=should_stop, **simulation)
         return
     started = datetime.now()
+    screen = ScreenRecorder(settings.screen_command, lambda jpeg, at: sink.aftertime.frame(run["id"], jpeg, at),
+                            settings.screen_seconds) if settings.screen_command else None
     try:
+        if screen:
+            screen.start()
         busy = center.busy()
         job_id = center.run(binding.cases, f"Aftertime · {binding.title}", suites=list(target.get("suites") or []),
                             dry_run=bool(target.get("dryRun")), stop_on_failure=bool(target.get("stopOnFailure")))
@@ -137,6 +150,10 @@ def execute(
     except CenterError as exc:
         sink({"type": "error", "message": f"Центр E2E недоступний: {exc}"})
         return
+    finally:
+        if screen:
+            screen.close()
+            sink({"type": "log", "line": f"Aftertime: кадрів екрана передано: {screen.frames}"})
     import_report(settings, binding, run["id"], started, sink, every_launch=run.get("kind") == "center")
 
 

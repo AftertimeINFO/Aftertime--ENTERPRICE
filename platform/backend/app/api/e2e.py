@@ -9,12 +9,16 @@ import re
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from hashlib import sha1
+
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import CenterSnapshot, LabE2eRun, LabWorkflowVersion, ReportLaunch
+from app.models import CenterSnapshot, LabE2eFrame, LabE2eRun, LabWorkflowVersion, ReportLaunch
+from app.services.reports import reports_dir
 from app.services.test_bindings import load_bindings, phase_coverage
 
 router = APIRouter(prefix="/api/v1/lab", tags=["e2e"])
@@ -241,3 +245,62 @@ def e2e_run_events(run_id: str, body: dict[str, Any], db: Session = Depends(get_
             apply_event(run, event)
     db.commit()
     return {"status": run.status, "stop_requested": run.stop_requested}
+
+
+# Frames of a still screen are identical; keep one per change (per API process).
+_last_frame: dict[str, str] = {}
+FRAME_LIMIT = 5 * 1024 * 1024
+JPEG_MAGIC = bytes([0xFF, 0xD8])
+
+
+def _frame_path(run_id: str, frame_id: str):
+    return reports_dir() / "frames" / run_id / f"{frame_id}.jpg"
+
+
+def _current_phase(run: LabE2eRun) -> str | None:
+    states = run.states or []
+    active = next((item["phase"] for item in states if item.get("state") == "active"), None)
+    if active:
+        return active
+    done = [item["phase"] for item in states if item.get("state") in ("passed", "failed", "stopped")]
+    return done[-1] if done else None
+
+
+@router.post("/e2e-runs/{run_id}/frames")
+async def add_frame(run_id: str, request: Request, db: Session = Depends(get_db)) -> dict[str, Any]:
+    """A JPEG of the machine under test from the bridge; the current phase is recorded with it."""
+    run = _get_run(db, run_id)
+    body = await request.body()
+    if not body or len(body) > FRAME_LIMIT or not body.startswith(JPEG_MAGIC):
+        raise HTTPException(422, "JPEG frame expected")
+    digest = sha1(body).hexdigest()
+    if _last_frame.get(run_id) == digest:
+        return {"stored": False}
+    try:
+        captured = datetime.fromisoformat(request.headers.get("x-captured-at", ""))
+    except ValueError:
+        captured = datetime.now(UTC)
+    frame = LabE2eFrame(run_id=run.id, captured_at=captured, phase=_current_phase(run), size=len(body))
+    db.add(frame)
+    db.flush()
+    path = _frame_path(run.id, frame.id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(body)
+    db.commit()
+    _last_frame[run_id] = digest
+    return {"stored": True, "id": frame.id, "phase": frame.phase}
+
+
+@router.get("/e2e-runs/{run_id}/frames")
+def frames(run_id: str, db: Session = Depends(get_db)) -> list[dict[str, Any]]:
+    rows = db.scalars(select(LabE2eFrame).where(LabE2eFrame.run_id == run_id).order_by(LabE2eFrame.captured_at))
+    return [{"id": row.id, "captured_at": row.captured_at, "phase": row.phase} for row in rows]
+
+
+@router.get("/e2e-frames/{frame_id}")
+def frame_image(frame_id: str, db: Session = Depends(get_db)) -> FileResponse:
+    row = db.get(LabE2eFrame, frame_id)
+    path = _frame_path(row.run_id, row.id) if row else None
+    if not path or not path.exists():
+        raise HTTPException(404, "frame not found")
+    return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
