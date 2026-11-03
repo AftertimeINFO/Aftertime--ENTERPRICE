@@ -49,6 +49,7 @@ export const api = {
   archiveTest: (history_id: string, name: string) => request<Row>("/lab/reports/archive", json("POST", { history_id, name })),
   restoreTest: (historyId: string) => request<Row>(`/lab/reports/archive/${encodeURIComponent(historyId)}`, json("DELETE")),
   packs: () => request<Row[]>("/lab/packs"),
+  settings: () => request<Row>("/lab/settings"),
   installPack: (id: string) => request<Row>(`/lab/packs/${encodeURIComponent(id)}/install`, json("POST")),
   centerState: () => request<Row>("/lab/center/state"),
   centerRuns: () => request<Row[]>("/lab/center/runs"),

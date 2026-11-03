@@ -27,3 +27,12 @@ describe("model packs in the interface", () => {
     expect(hasSystemModel(undefined)).toBe(true);
   });
 });
+
+describe("default contour", () => {
+  it("opens the configured process when it belongs to the contour, else the first one", async () => {
+    const { defaultProcess } = await import("./packs");
+    expect(defaultProcess({ workflows: ["a", "rental-issue"] }, "rental-issue")).toBe("rental-issue");
+    expect(defaultProcess({ workflows: ["a", "b"] }, "rental-issue")).toBe("a");
+    expect(defaultProcess({ workflows: [] }, "x")).toBeNull();
+  });
+});

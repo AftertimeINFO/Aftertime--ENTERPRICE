@@ -8,16 +8,24 @@ type Props = {
   viewer: any;
   onError: (message: string) => void;
   onOpenReport?: (launchId: string) => void;
+  /** Shows the machine screen of the selected run next to the diagram (null hides it). */
+  onScreen?: (screen: { runId: string; active: boolean; focusPhase: string | null } | null) => void;
 };
 
 /** Runs the end-to-end test bound to a published process and paints its progress on the diagram. */
-export function E2ePanel({ workflow, viewer, onError, onOpenReport }: Props) {
+export function E2ePanel({ workflow, viewer, onError, onOpenReport, onScreen }: Props) {
   const versionId = workflow.version.id;
   const [runs, setRuns] = useState<Row[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [run, setRun] = useState<Row | undefined>();
   const [lines, setLines] = useState<string[]>([]);
   const [focusPhase, setFocusPhase] = useState<string | null>(null);
+  const runId = run?.id;
+  const runActive = isActive(run);
+  useEffect(() => {
+    onScreen?.(runId ? { runId, active: runActive, focusPhase } : null);
+  }, [onScreen, runId, runActive, focusPhase]);
+  useEffect(() => () => onScreen?.(null), [onScreen]);
   const next = useRef(0);
   const painted = useRef<string[]>([]);
 
@@ -88,7 +96,7 @@ export function E2ePanel({ workflow, viewer, onError, onOpenReport }: Props) {
         {item.phase}{item.inferred && item.state === "passed" ? " ·" : ""}
       </li>)}
     </ol>}
-    {run && <VmScreen runId={run.id} active={isActive(run)} focusPhase={focusPhase} />}
+    {run && !onScreen && <VmScreen runId={run.id} active={isActive(run)} focusPhase={focusPhase} />}
     {lines.length > 0 && <pre className="e2e-log">{lines.slice(-40).join("\n")}</pre>}
     {run?.report_launch_id && onOpenReport && <button className="link" onClick={() => onOpenReport(run.report_launch_id)}>Відкрити звіт прогону</button>}
     {run?.folder && <span className="e2e-folder">Тека запуску: {run.folder}</span>}

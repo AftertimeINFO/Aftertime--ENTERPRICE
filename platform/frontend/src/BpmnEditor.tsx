@@ -8,6 +8,7 @@ import { api, type Row } from "./api";
 import { needsSvgRepair, svgStatusLabel } from "./bpmnSvg";
 import { acceptsTestPhase, phaseOptions } from "./testBindings";
 import { E2ePanel } from "./E2ePanel";
+import { VmScreen } from "./VmScreen";
 
 type Props = {
   workflow: Row;
@@ -81,6 +82,17 @@ export function BpmnEditor({ workflow, immutable, onSaved, onValidation, onError
   const [bindings, setBindings] = useState<Row[]>([]);
   const [, setProcessRevision] = useState(0);
   const [ready, setReady] = useState(false);
+  const [screen, setScreen] = useState<{ runId: string; active: boolean; focusPhase: string | null } | null>(null);
+  const [screenOpen, setScreenOpen] = useState(false);
+  // A running test opens the screen by itself; for a finished run a phase click or the button does.
+  useEffect(() => { if (screen?.active || screen?.focusPhase) setScreenOpen(true); }, [screen?.active, screen?.focusPhase]);
+  const showScreen = !!screen && screenOpen;
+  useEffect(() => {
+    // The diagram shares the field with the machine screen: refit it whenever the split changes.
+    if (!editor.current || !ready) return;
+    const canvas = editor.current.get("canvas");
+    window.setTimeout(() => { canvas.resized(); canvas.zoom("fit-viewport"); }, 0);
+  }, [showScreen, ready]);
   useEffect(() => { api.testBindings().then(setBindings).catch(() => setBindings([])); }, []);
 
   useEffect(() => {
@@ -187,8 +199,13 @@ export function BpmnEditor({ workflow, immutable, onSaved, onValidation, onError
   const type = selected?.type || "";
   const eventOptions = EVENT_OPTIONS[type] || [];
   const attrs = selected?.businessObject?.$attrs || {};
-  return <div className={`native-bpmn-editor ${immutable ? "readonly" : "editable"}`}>
+  return <div className={`native-bpmn-editor ${immutable ? "readonly" : "editable"} ${showScreen ? "with-screen" : ""}`}>
     <div className="native-bpmn-canvas" ref={container} />
+    {showScreen && screen && <section className="bpmn-screen-pane">
+      <VmScreen runId={screen.runId} active={screen.active} focusPhase={screen.focusPhase} />
+      <button className="link" onClick={() => setScreenOpen(false)}>Сховати екран VM</button>
+    </section>}
+    {screen && !screenOpen && <button className="bpmn-screen-show" onClick={() => setScreenOpen(true)}>Показати екран VM</button>}
     {!immutable && <div className="bpmn-save-strip">
       <span>{dirty ? "Є незбережені зміни" : "BPMN XML синхронізовано"}</span>
       <span className={`svg-status ${presentation?.status || "missing"}`}>{svgStatusLabel(presentation)}</span>
@@ -206,7 +223,7 @@ export function BpmnEditor({ workflow, immutable, onSaved, onValidation, onError
       {type === "bpmn:BoundaryEvent" && <label className="check"><input type="checkbox" disabled={immutable} checked={selected.businessObject?.cancelActivity !== false} onChange={(event) => editor.current.get("modeling").updateProperties(selected, { cancelActivity: event.target.checked })} /> Переривати активну роботу</label>}
       <span>Використовуйте контекстне меню елемента для зміни типу задачі, gateway або події.</span>
     </aside>}
-    {!selected && ready && <aside className="bpmn-properties">
+    {!selected && ready && <aside className="bpmn-properties process-overview">
       <small>ПРОЦЕС</small>
       <b>{processObject()?.name || workflow.version.name}</b>
       <label>Прив'язка тестів<select disabled={immutable} value={processObject()?.$attrs?.["aftertime:testBinding"] || ""} onChange={(event) => updateProcessExtension("testBinding", event.target.value)}>
@@ -219,7 +236,7 @@ export function BpmnEditor({ workflow, immutable, onSaved, onValidation, onError
       </ul>}
       {workflow.test && dirty && <span>Покриття оновиться після збереження.</span>}
     </aside>}
-    {immutable && ready && workflow.test && <E2ePanel workflow={workflow} viewer={editor.current} onError={onError} onOpenReport={onOpenReport} />}
+    {immutable && ready && workflow.test && <E2ePanel workflow={workflow} viewer={editor.current} onError={onError} onOpenReport={onOpenReport} onScreen={setScreen} />}
     <datalist id="bpmn-test-phases">{phaseOptions(bindings, processObject()?.$attrs?.["aftertime:testBinding"]).map((phase) => <option value={phase} key={phase} />)}</datalist>
   </div>;
 }

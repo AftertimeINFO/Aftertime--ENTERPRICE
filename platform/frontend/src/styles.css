@@ -1750,3 +1750,34 @@ pre {
 .vm-screen input[type=range] { width: 100%; }
 .e2e-panel:has(.vm-screen.large) { width: min(900px, calc(100% - 36px)); max-height: 92%; }
 .e2e-phases li { cursor: pointer; }
+
+/* A contour of processes only: the BPMN editor takes the whole workbench */
+.workbench.process-only { grid-template-columns: 1fr; }
+.workbench.process-only > .palette,
+.workbench.process-only > .inspector { display: none; }
+
+/* During a run the field is split: the process on the left, the machine screen on the right */
+.native-bpmn-editor.with-screen .native-bpmn-canvas { width: 52%; }
+.bpmn-screen-pane {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 6;
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  width: 48%;
+  padding: 12px;
+  overflow: auto;
+  color: #e4eee9;
+  background: #07110e;
+  border-left: 1px solid #315147;
+}
+.bpmn-screen-pane .vm-screen header span { color: #9fb3ab; }
+.bpmn-screen-pane .vm-screen.empty { padding: 40px 0; text-align: center; }
+.bpmn-screen-show { position: absolute; right: 18px; bottom: 18px; z-index: 6; }
+.native-bpmn-editor.with-screen .bpmn-properties { right: calc(48% + 18px); }
+/* While the screen is shown the diagram needs all its room; the process overview returns after. */
+.native-bpmn-editor.with-screen .bpmn-properties.process-overview { display: none; }
+.bpmn-screen-pane button.link { justify-self: start; padding: 0; border: 0; background: none; color: #9ec9ff; cursor: pointer; font-size: 11px; }
