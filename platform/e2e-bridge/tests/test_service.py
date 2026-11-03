@@ -57,3 +57,40 @@ def test_execute_reports_an_unknown_binding():
     sink = AftertimeSink(aftertime, "r3")
     execute({"id": "r3", "binding": "missing"}, {}, None, Settings("", "."), sink)
     assert flat(aftertime)[0]["type"] == "error"
+
+
+def test_center_run_starts_chosen_suites_and_imports_every_new_launch(tmp_path, monkeypatch):
+    calls = {}
+
+    class Center:
+        def busy(self):
+            return {"running": None, "queue": []}
+
+        def run(self, cases, title, suites=None, dry_run=False, stop_on_failure=False):
+            calls["run"] = (cases, suites, dry_run, stop_on_failure)
+            return "job-9"
+
+    def fake_follow(center, settings, binding, job_id, sink, should_stop):
+        assert binding.phases == [] and job_id == "job-9"
+        sink({"type": "finished", "status": "passed", "states": []})
+
+    imported = []
+    monkeypatch.setattr("e2e_bridge.service.follow", fake_follow)
+    monkeypatch.setattr("e2e_bridge.service.import_report",
+                        lambda settings, binding, run_id, since, sink, every_launch=False: imported.append(every_launch))
+    aftertime = FakeAftertime()
+    run = {"id": "r4", "binding": "", "kind": "center",
+           "target": {"suites": ["chains"], "cases": [], "title": "chains", "dryRun": True, "stopOnFailure": True}}
+    execute(run, {}, Center(), Settings("", tmp_path), AftertimeSink(aftertime, "r4"))
+    assert calls["run"] == ([], ["chains"], True, True)
+    assert imported == [True]
+    assert [event["type"] for event in flat(aftertime)] == ["queued", "finished"]
+
+
+def test_center_refuses_a_run_without_suites_or_cases():
+    import pytest
+
+    from e2e_bridge.center import Center, CenterError
+
+    with pytest.raises(CenterError):
+        Center("http://127.0.0.1:9").run([], "порожньо")

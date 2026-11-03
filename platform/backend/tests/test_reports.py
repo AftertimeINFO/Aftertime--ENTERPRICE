@@ -3,7 +3,9 @@ import uuid
 
 import pytest
 
-from app.api.reports import attachment, create_launch, overview, result, results, upload_attachment
+from app.api.reports import (
+    archive_test, archived_tests, attachment, create_launch, overview, restore_test, result, results, upload_attachment,
+)
 from app.db import SessionLocal
 from app.models import ReportAttachment, ReportLaunch
 from app.services.reports import categorize, stats
@@ -79,14 +81,26 @@ async def test_attachment_is_stored_and_served(two_launches, reports_dir):
 
 def test_latest_scope_keeps_the_newest_result_of_each_test_and_history(two_launches):
     with SessionLocal() as db:
-        latest = [item for item in results(None, None, None, two_launches["history"], db)]
+        latest = [item for item in results(q=two_launches["history"], db=db)]
         assert [item["status"] for item in latest] == ["passed"]
-        first = results(two_launches["first"]["launch_id"], None, None, None, db)
+        first = results(launch_id=two_launches["first"]["launch_id"], db=db)
         assert first[0]["category"] == "Розбіжність з оракулом"
         detail = result(latest[0]["id"], db)
         assert [item["status"] for item in detail["history"]] == ["passed", "failed"]
-        summary = overview(two_launches["first"]["launch_id"], db)
+        summary = overview(launch_id=two_launches["first"]["launch_id"], db=db)
         assert summary["stats"]["failed"] == 1 and summary["stats"]["total"] == 1
         assert summary["categories"] == [{"name": "Розбіжність з оракулом", "count": 1}]
         assert summary["launch"]["environment"] == {"Hall": "11"}
         assert json.dumps(summary, default=str)
+
+
+def test_archived_test_leaves_latest_results_but_keeps_history(two_launches):
+    history = two_launches["history"]
+    with SessionLocal() as db:
+        archive_test({"history_id": history, "name": "Кейс"}, db)
+        assert results(q=history, db=db) == []
+        assert [item["archived"] for item in results(q=history, include_archived=True, db=db)] == [True]
+        assert results(launch_id=two_launches["first"]["launch_id"], db=db)[0]["archived"] is True
+        assert history in [item["history_id"] for item in archived_tests(db)]
+        restore_test(history, db)
+        assert len(results(q=history, db=db)) == 1

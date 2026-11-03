@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, type Row } from "./api";
+import { LaunchPanel } from "./LaunchPanel";
 import {
   STATUS_LABELS, STATUSES, attachmentKind, formatDuration, stepCount, statusShares, suiteTree, tagsOf,
   type SuiteNode,
@@ -11,7 +12,7 @@ type Props = {
   onError: (message: string) => void;
 };
 
-type Tab = "overview" | "suites" | "categories";
+type Tab = "overview" | "suites" | "categories" | "launch";
 
 /** Test reports in Aftertime: what Allure shows, read from imported allure-results. */
 export function ReportsView({ initialLaunchId, onOpenProcess, onError }: Props) {
@@ -24,14 +25,17 @@ export function ReportsView({ initialLaunchId, onOpenProcess, onError }: Props) 
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [includeArchived, setIncludeArchived] = useState(false);
+  const [revision, setRevision] = useState(0);
 
   useEffect(() => { api.reportLaunches().then(setLaunches).catch((error) => onError(String(error))); }, [onError]);
   useEffect(() => { if (initialLaunchId) setLaunchId(initialLaunchId); }, [initialLaunchId]);
   useEffect(() => {
-    api.reportOverview(launchId || undefined).then(setOverview).catch((error) => onError(String(error)));
-    api.reportResults({ launch_id: launchId || undefined }).then(setResults).catch((error) => onError(String(error)));
-    setSelectedId(null);
-  }, [launchId, onError]);
+    api.reportOverview(launchId || undefined, includeArchived).then(setOverview).catch((error) => onError(String(error)));
+    api.reportResults({ launch_id: launchId || undefined, include_archived: includeArchived ? "true" : undefined })
+      .then(setResults).catch((error) => onError(String(error)));
+  }, [launchId, includeArchived, revision, onError]);
+  useEffect(() => setSelectedId(null), [launchId]);
 
   const visible = useMemo(() => results.filter((item) =>
     (!statusFilter.length || statusFilter.includes(item.status))
@@ -56,26 +60,29 @@ export function ReportsView({ initialLaunchId, onOpenProcess, onError }: Props) 
         </option>)}
       </select>
       <nav>
-        {([["overview", "Огляд"], ["suites", "Набори"], ["categories", "Категорії"]] as [Tab, string][]).map(([key, title]) =>
+        {([["overview", "Огляд"], ["suites", "Набори"], ["categories", "Категорії"], ["launch", "Запуск"]] as [Tab, string][]).map(([key, title]) =>
           <button key={key} className={tab === key ? "active" : ""} onClick={() => setTab(key)}>{title}</button>)}
       </nav>
     </header>
 
     {tab === "overview" && overview && <Overview overview={overview} onCategory={(name) => { setCategory(name); setTab("categories"); }} onLaunch={(id) => setLaunchId(id)} />}
 
-    {tab !== "overview" && <div className="reports-body">
+    {tab === "launch" && <LaunchPanel onError={onError} onOpenLaunch={(id) => { setLaunchId(id); setTab("suites"); }} />}
+
+    {(tab === "suites" || tab === "categories") && <div className="reports-body">
       <section className="reports-list">
         <div className="reports-filters">
           {STATUSES.map((status) => <button key={status} className={`chip ${status} ${statusFilter.includes(status) ? "on" : ""}`} onClick={() => toggleStatus(status)}>
             {STATUS_LABELS[status]} {results.filter((item) => item.status === status).length}
           </button>)}
           <input placeholder="Пошук за назвою, кейсом, повідомленням" value={query} onChange={(event) => setQuery(event.target.value)} />
+          {!launchId && <label className="archived-toggle"><input type="checkbox" checked={includeArchived} onChange={(event) => setIncludeArchived(event.target.checked)} /> архівні тести</label>}
         </div>
         {tab === "suites" ? <SuiteTree node={suiteTree(visible)} selectedId={selectedId} onSelect={setSelectedId} depth={0} />
           : <Categories overview={overview} results={visible} selected={category} onSelect={setCategory} selectedId={selectedId} onSelectTest={setSelectedId} />}
       </section>
       <section className="reports-detail">
-        {selectedId ? <TestDetail id={selectedId} onSelect={setSelectedId} onOpenProcess={onOpenProcess} onError={onError} />
+        {selectedId ? <TestDetail id={selectedId} onSelect={setSelectedId} onOpenProcess={onOpenProcess} onError={onError} onArchived={() => setRevision((value) => value + 1)} />
           : <div className="reports-empty">Оберіть тест зі списку</div>}
       </section>
     </div>}
@@ -139,6 +146,7 @@ function TestRow({ test, selected, onSelect }: { test: Row; selected: boolean; o
     <i className={`dot ${test.status}`} />
     <span>{test.name}</span>
     {test.binding && <em title="Прив'язано до процесу BPMN">BPMN</em>}
+    {test.archived && <em className="archived" title="Архівний тест">архів</em>}
     <small>{formatDuration(test.duration_ms)}</small>
   </li>;
 }
@@ -168,9 +176,22 @@ function Categories({ overview, results, selected, onSelect, selectedId, onSelec
   </ul>;
 }
 
-function TestDetail({ id, onSelect, onOpenProcess, onError }: { id: string; onSelect: (id: string) => void; onOpenProcess: (binding: string) => void; onError: (message: string) => void }) {
+function TestDetail({ id, onSelect, onOpenProcess, onError, onArchived }: {
+  id: string; onSelect: (id: string) => void; onOpenProcess: (binding: string) => void; onError: (message: string) => void; onArchived: () => void;
+}) {
   const [test, setTest] = useState<Row | null>(null);
   useEffect(() => { setTest(null); api.reportResult(id).then(setTest).catch((error) => onError(String(error))); }, [id, onError]);
+  const toggleArchive = async () => {
+    if (!test) return;
+    try {
+      if (test.archived) await api.restoreTest(test.history_id);
+      else await api.archiveTest(test.history_id, test.name);
+      setTest({ ...test, archived: !test.archived });
+      onArchived();
+    } catch (error) {
+      onError(String(error));
+    }
+  };
   if (!test) return <div className="reports-empty">Завантаження…</div>;
   const data = test.data || {};
   const details = data.statusDetails || {};
@@ -183,6 +204,9 @@ function TestDetail({ id, onSelect, onOpenProcess, onError }: { id: string; onSe
         <span className="muted">{test.full_name} · {STATUS_LABELS[test.status]} · {formatDuration(test.duration_ms)} · {test.launch?.name}</span>
       </div>
       {test.binding && <button onClick={() => onOpenProcess(test.binding)}>Відкрити процес BPMN</button>}
+      <button onClick={toggleArchive} title="Архівний тест не показується в останніх результатах; історія зберігається">
+        {test.archived ? "Повернути з архіву" : "Архівувати"}
+      </button>
     </header>
     {test.history?.length > 1 && <div className="history">
       <small>ІСТОРІЯ</small>

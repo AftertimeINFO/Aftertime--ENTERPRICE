@@ -8,7 +8,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import ReportAttachment, ReportLaunch, ReportResult
+from app.models import ReportArchivedTest, ReportAttachment, ReportLaunch, ReportResult
 from app.services.reports import (
     SOURCE_RE, STATUSES, attachments_of, import_launch, reports_dir, store_attachment,
 )
@@ -31,8 +31,11 @@ def _launch_row(launch: ReportLaunch) -> dict[str, Any]:
     }
 
 
-def _scope(launch_id: str | None):
-    """Results of one launch, or the latest result of every test (like Allure's merged report)."""
+def _scope(launch_id: str | None, include_archived: bool = False):
+    """Results of one launch, or the latest result of every test (like Allure's merged report).
+
+    Archived tests (removed from the suites) stay in launches and history but leave the latest view.
+    """
     if launch_id:
         return select(*LIGHT_COLUMNS).where(ReportResult.launch_id == launch_id)
     latest = (
@@ -40,7 +43,10 @@ def _scope(launch_id: str | None):
         .distinct(ReportResult.history_id)
         .order_by(ReportResult.history_id, ReportResult.start.desc().nulls_last())
     )
-    return select(*LIGHT_COLUMNS).where(ReportResult.id.in_(latest))
+    query = select(*LIGHT_COLUMNS).where(ReportResult.id.in_(latest))
+    if not include_archived:
+        query = query.where(ReportResult.history_id.not_in(select(ReportArchivedTest.history_id)))
+    return query
 
 
 def _bound_processes() -> dict[str, str]:
@@ -86,8 +92,8 @@ def launches(limit: int = 100, db: Session = Depends(get_db)) -> list[dict[str, 
 
 
 @router.get("/overview")
-def overview(launch_id: str | None = None, db: Session = Depends(get_db)) -> dict[str, Any]:
-    scope = _scope(launch_id).subquery()
+def overview(launch_id: str | None = None, include_archived: bool = False, db: Session = Depends(get_db)) -> dict[str, Any]:
+    scope = _scope(launch_id, include_archived).subquery()
     counts = dict(db.execute(select(scope.c.status, func.count()).group_by(scope.c.status)).all())
     categories = db.execute(
         select(scope.c.category, func.count()).where(scope.c.category.is_not(None))
@@ -113,9 +119,10 @@ def results(
     status: str | None = None,
     category: str | None = None,
     q: str | None = None,
+    include_archived: bool = False,
     db: Session = Depends(get_db),
 ) -> list[dict[str, Any]]:
-    scope = _scope(launch_id).subquery()
+    scope = _scope(launch_id, include_archived).subquery()
     query = select(scope)
     if status:
         query = query.where(scope.c.status.in_(status.split(",")))
@@ -125,8 +132,9 @@ def results(
         pattern = f"%{q}%"
         query = query.where(or_(scope.c.name.ilike(pattern), scope.c.full_name.ilike(pattern), scope.c.message.ilike(pattern)))
     bound = _bound_processes()
+    archived = set(db.scalars(select(ReportArchivedTest.history_id)))
     rows = db.execute(query.order_by(scope.c.parent_suite, scope.c.suite, scope.c.name)).mappings()
-    return [{**row, "binding": bound.get(row["full_name"])} for row in rows]
+    return [{**row, "binding": bound.get(row["full_name"]), "archived": row["history_id"] in archived} for row in rows]
 
 
 @router.get("/results/{result_id}")
@@ -153,4 +161,31 @@ def result(result_id: str, db: Session = Depends(get_db)) -> dict[str, Any]:
         "start": row.start, "data": row.data, "stored_attachments": sorted(stored),
         "history": [dict(item) for item in history],
         "binding": _bound_processes().get(row.full_name),
+        "archived": db.get(ReportArchivedTest, row.history_id) is not None,
     }
+
+
+@router.post("/archive")
+def archive_test(body: dict[str, Any], db: Session = Depends(get_db)) -> dict[str, Any]:
+    history_id = str(body.get("history_id") or "")
+    if not history_id:
+        raise HTTPException(422, "history_id is required")
+    if not db.get(ReportArchivedTest, history_id):
+        db.add(ReportArchivedTest(history_id=history_id, name=str(body.get("name") or "")))
+        db.commit()
+    return {"history_id": history_id, "archived": True}
+
+
+@router.delete("/archive/{history_id}")
+def restore_test(history_id: str, db: Session = Depends(get_db)) -> dict[str, Any]:
+    row = db.get(ReportArchivedTest, history_id)
+    if row:
+        db.delete(row)
+        db.commit()
+    return {"history_id": history_id, "archived": False}
+
+
+@router.get("/archive")
+def archived_tests(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
+    rows = db.scalars(select(ReportArchivedTest).order_by(ReportArchivedTest.archived_at.desc()))
+    return [{"history_id": row.history_id, "name": row.name, "archived_at": row.archived_at} for row in rows]

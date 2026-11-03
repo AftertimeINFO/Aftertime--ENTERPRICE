@@ -1705,3 +1705,35 @@ pre {
 .attachment img, .attachment video { display: block; max-width: 100%; margin: 6px 0; border: 1px solid var(--line); }
 .attachment pre { max-height: 320px; margin: 6px 0; padding: 8px; overflow: auto; white-space: pre-wrap; background: #ffffff08; font-size: 10px; }
 .app-shell.reports-shell { grid-template-rows: 72px 1fr; }
+
+/* Launching suites and cases from Aftertime */
+.launch { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 14px; align-items: start; }
+.launch .card header { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.launch .card header h3 { flex: 1; }
+.launch label { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; }
+.launch-badges { display: flex; flex-wrap: wrap; gap: 6px; }
+.launch-badges span { padding: 2px 8px; border: 1px solid var(--line); border-radius: 10px; font-size: 10px; }
+.launch-badges .ok { border-color: #3f9b70; color: #8fd6b4; }
+.launch-badges .bad { border-color: #c4553d; color: #f08f7a; }
+.launch-badges .off { color: var(--muted); }
+.progress { height: 8px; overflow: hidden; border-radius: 4px; background: var(--line); }
+.progress span { display: block; height: 100%; background: linear-gradient(90deg, #4f8fd6, #64d8cb); transition: width .6s; }
+.launch-suites { display: flex; flex-wrap: wrap; gap: 4px; margin: 0; padding: 0; list-style: none; font-size: 10px; }
+.launch-suites li { padding: 2px 6px; border: 1px solid var(--line); border-radius: 4px; }
+.launch-suites .running { border-color: #4f8fd6; color: #9ec9ff; }
+.launch-suites .passed { border-color: #3f9b70; color: #8fd6b4; }
+.launch-suites .failed { border-color: #c4553d; color: #f08f7a; }
+.launch-groups { display: flex; flex-wrap: wrap; gap: 6px; }
+.launch-catalog { grid-column: 1 / -1; }
+.launch-suite-list { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; font-size: 12px; }
+.launch-suite-list summary { display: flex; align-items: center; gap: 10px; padding: 6px 4px; cursor: pointer; }
+.launch-suite-list summary span { flex: 1; }
+.launch-suite-list summary small, .launch-suite-list li small { color: var(--muted); }
+.launch-suite-list ul { display: grid; gap: 2px; margin: 0 0 6px; padding-left: 22px; list-style: none; }
+.launch-suite-list ul label { display: flex; width: 100%; font-size: 12px; }
+.launch-suite-list ul label span { flex: 1; }
+.launch .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--status, #3a4a44); }
+.launch-history table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.launch-history td { padding: 3px 8px 3px 0; border-bottom: 1px solid var(--line); }
+.test-row em.archived { border-color: var(--muted); color: var(--muted); }
+.archived-toggle { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; color: var(--muted); }

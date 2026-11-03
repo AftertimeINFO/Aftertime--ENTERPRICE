@@ -81,6 +81,11 @@ def newest_launch_for(root: Path, cases: list[str], since: datetime) -> Path | N
     return None
 
 
+def launches_since(root: Path, since: datetime) -> list[Path]:
+    """Every launch written after ``since`` — what one run of the control center published."""
+    return [path for path in launch_folders(root) if datetime.fromtimestamp(path.stat().st_mtime) >= since]
+
+
 def sync(root: Path, uploader: Uploader, echo: Callable[[dict], None]) -> int:
     count = 0
     for folder in launch_folders(root):

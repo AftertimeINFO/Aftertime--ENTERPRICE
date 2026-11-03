@@ -144,6 +144,7 @@ def follow(
     live_proofs: dict = {}
     next_live = clock()
     last_status = None
+    last_progress = None
     stop_sent = False
     sink({"type": "states", "job": job_id, "states": states})
     while True:
@@ -171,6 +172,9 @@ def follow(
         if status != last_status:
             sink({"type": "status", "job": job_id, "status": status, "progress": job.get("progress")})
             last_status = status
+        if job.get("progress") and job.get("progress") != last_progress:
+            last_progress = job.get("progress")
+            sink({"type": "progress", "job": job_id, "progress": last_progress})
         sleep(settings.poll_seconds)
     folder = find_run_folder(lines, settings.run_root, binding.run_folder_mask)
     outcome = status

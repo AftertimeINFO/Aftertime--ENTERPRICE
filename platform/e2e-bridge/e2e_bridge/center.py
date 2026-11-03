@@ -45,8 +45,25 @@ class Center:
         state = self.state()
         return {"running": state.get("running"), "queue": list(state.get("queue") or [])}
 
-    def run(self, cases: list[str], title: str) -> str:
-        return self._call("POST", "/api/run", {"cases": cases, "title": title})["id"]
+    def run(
+        self,
+        cases: list[str],
+        title: str,
+        suites: list[str] | None = None,
+        dry_run: bool = False,
+        stop_on_failure: bool = False,
+    ) -> str:
+        if not cases and not suites:
+            # The control center treats an empty request as "run everything".
+            raise CenterError("refusing to start a run without suites or cases")
+        body: dict[str, Any] = {"cases": cases, "title": title}
+        if suites and not cases:
+            body["suites"] = suites
+        if dry_run:
+            body["dryRun"] = True
+        if stop_on_failure:
+            body["stopOnFailure"] = True
+        return self._call("POST", "/api/run", body)["id"]
 
     def job(self, job_id: str, start: int = 0) -> dict[str, Any]:
         return self._call("GET", f"/api/job/{job_id}?from={start}")

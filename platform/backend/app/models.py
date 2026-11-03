@@ -433,9 +433,13 @@ class LabE2eRun(Base):
 
     __tablename__ = "lab_e2e_runs"
     id: Mapped[str] = mapped_column(String(80), primary_key=True, default=new_id)
-    workflow_version_id: Mapped[str] = mapped_column(
+    workflow_version_id: Mapped[str | None] = mapped_column(
         ForeignKey("lab_workflow_versions.id", ondelete="CASCADE"), index=True
     )
+    # "binding": the test case bound to a BPMN process; "center": suites or cases chosen by hand.
+    kind: Mapped[str] = mapped_column(String(20), default="binding")
+    target: Mapped[dict] = mapped_column(JSONB, default=dict)
+    progress: Mapped[dict | None] = mapped_column(JSONB)
     binding: Mapped[str] = mapped_column(String(120))
     status: Mapped[str] = mapped_column(String(20), default="queued", index=True)
     center_job_id: Mapped[str | None] = mapped_column(String(80))
@@ -464,6 +468,24 @@ class ReportLaunch(Base):
     stop: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     e2e_run_id: Mapped[str | None] = mapped_column(String(80), index=True)
     imported_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ReportArchivedTest(Base):
+    """A test hidden from the latest results (removed or renamed in the test suite)."""
+
+    __tablename__ = "report_archived_tests"
+    history_id: Mapped[str] = mapped_column(String(200), primary_key=True)
+    name: Mapped[str] = mapped_column(Text, default="")
+    archived_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class CenterSnapshot(Base):
+    """Latest state of the external E2E control center, pushed by the bridge."""
+
+    __tablename__ = "center_snapshots"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default="center")
+    data: Mapped[dict] = mapped_column(JSONB, default=dict)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class ReportResult(Base):

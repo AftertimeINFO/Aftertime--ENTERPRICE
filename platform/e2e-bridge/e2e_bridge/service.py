@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import threading
 import time
 import urllib.request
 from datetime import datetime
@@ -10,7 +11,7 @@ from typing import Any, Callable
 
 from e2e_bridge.center import Center, CenterError
 from e2e_bridge.phases import PASSED, Proof, changes, phase_states
-from e2e_bridge.results import Uploader, newest_launch_for
+from e2e_bridge.results import Uploader, launches_since, newest_launch_for
 from e2e_bridge.runner import Binding, Settings, follow
 
 
@@ -32,6 +33,9 @@ class Aftertime:
 
     def claim(self) -> dict[str, Any] | None:
         return self._call("POST", "/lab/e2e-runs/claim")
+
+    def push_state(self, state: dict[str, Any]) -> None:
+        self._call("POST", "/lab/center/state", state)
 
     def report(self, run_id: str, events: list[dict[str, Any]]) -> dict[str, Any]:
         return self._call("POST", f"/lab/e2e-runs/{run_id}/events", {"events": events})
@@ -108,7 +112,13 @@ def execute(
     sink: AftertimeSink,
     simulation: dict[str, Any] | None = None,
 ) -> None:
-    binding = bindings.get(run["binding"])
+    target = run.get("target") or {}
+    if run.get("kind") == "center":
+        # Suites or cases chosen by hand: no BPMN phases, the log and progress tell the story.
+        binding = Binding(id="center", title=target.get("title") or "Запуск", phases=[],
+                          cases=list(target.get("cases") or []), run_folder_mask="*", proof_pattern=r"(?!)")
+    else:
+        binding = bindings.get(run["binding"])
     if binding is None:
         sink({"type": "error", "message": f"Прив'язку «{run['binding']}» не знайдено в налаштуваннях мосту"})
         return
@@ -120,28 +130,62 @@ def execute(
     started = datetime.now()
     try:
         busy = center.busy()
-        job_id = center.run(binding.cases, f"Aftertime · {binding.title}")
+        job_id = center.run(binding.cases, f"Aftertime · {binding.title}", suites=list(target.get("suites") or []),
+                            dry_run=bool(target.get("dryRun")), stop_on_failure=bool(target.get("stopOnFailure")))
         sink({"type": "queued", "job": job_id, "ahead": len(busy["queue"]) + (1 if busy["running"] else 0)})
         follow(center, settings, binding, job_id, sink, should_stop=should_stop)
     except CenterError as exc:
         sink({"type": "error", "message": f"Центр E2E недоступний: {exc}"})
         return
-    import_report(settings, binding, run["id"], started, sink)
+    import_report(settings, binding, run["id"], started, sink, every_launch=run.get("kind") == "center")
 
 
-def import_report(settings: Settings, binding: Binding, run_id: str, since: datetime, sink: Callable[[dict], None]) -> None:
-    """Bring the test report of a finished run into Aftertime reports."""
+def import_report(
+    settings: Settings,
+    binding: Binding,
+    run_id: str,
+    since: datetime,
+    sink: Callable[[dict], None],
+    every_launch: bool = False,
+) -> None:
+    """Bring the test reports of a finished run into Aftertime reports."""
     if not settings.results_root or not settings.results_root.is_dir():
         return
-    folder = newest_launch_for(settings.results_root, binding.cases, since)
-    if folder is None:
+    if every_launch:
+        folders = launches_since(settings.results_root, since)
+    else:
+        folder = newest_launch_for(settings.results_root, binding.cases, since)
+        folders = [folder] if folder else []
+    if not folders:
         sink({"type": "log", "line": "Aftertime: звіт прогону в результатах не знайдено"})
         return
+    uploader = Uploader(settings.aftertime_url)
+    for folder in folders:
+        try:
+            result = uploader.upload(folder, e2e_run_id=run_id)
+            sink({"type": "report", "launch": result["launch_id"], "folder": folder.name})
+        except OSError as exc:
+            sink({"type": "log", "line": f"Aftertime: звіт {folder.name} не імпортовано: {exc}"})
+
+
+def push_state(aftertime: Aftertime, center: Center, echo: Callable[[dict], None]) -> None:
+    """Mirror what the control center shows (catalog, stand, queue, history) into Aftertime."""
     try:
-        result = Uploader(settings.aftertime_url).upload(folder, e2e_run_id=run_id)
-        sink({"type": "report", "launch": result["launch_id"], "folder": folder.name})
+        state = center.state()
+    except CenterError as exc:
+        state = {"error": str(exc)}
+    state.pop("reports", None)
+    try:
+        aftertime.push_state(state)
     except OSError as exc:
-        sink({"type": "log", "line": f"Aftertime: звіт {folder.name} не імпортовано: {exc}"})
+        echo({"type": "error", "message": f"Aftertime недоступний: {exc}"})
+
+
+def _keep_pushing_state(aftertime: Aftertime, center: Center, echo: Callable[[dict], None], every: float) -> None:
+    # Runs beside the main loop, so Aftertime keeps seeing the stand while a run blocks it.
+    while True:
+        push_state(aftertime, center, echo)
+        time.sleep(every)
 
 
 def serve(
@@ -155,6 +199,9 @@ def serve(
 ) -> None:
     echo({"type": "serving", "aftertime": aftertime.url, "center": settings.center_url,
           "simulation": simulation is not None})
+    if not once:
+        threading.Thread(target=_keep_pushing_state, args=(aftertime, center, echo, settings.poll_seconds * 2),
+                         daemon=True).start()
     while True:
         try:
             run = aftertime.claim()
