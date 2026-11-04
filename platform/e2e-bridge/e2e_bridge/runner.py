@@ -76,7 +76,7 @@ class Settings:
         return cls(
             center_url=values.get("CENTER_URL", ""),
             run_root=Path(values.get("RUN_ROOT", ".")),
-            aftertime_url=values.get("AFTERTIME_API_URL", "http://localhost:8000/api/v1"),
+            aftertime_url=values.get("AFTERTIME_API_URL", "http://127.0.0.1:8000/api/v1"),
             results_root=Path(values["RESULTS_ROOT"]) if values.get("RESULTS_ROOT") else None,
             packs_dir=Path(values["PACKS_DIR"]) if values.get("PACKS_DIR") else None,
             screen_command=values.get("SCREEN_COMMAND", ""),

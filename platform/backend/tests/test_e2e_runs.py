@@ -35,8 +35,9 @@ def bindings(tmp_path, monkeypatch):
 @pytest.fixture
 def published(bindings):
     with SessionLocal() as db:
-        db.query(LabE2eRun).filter(LabE2eRun.status.in_(["queued", "claimed", "waiting", "running"])).delete()
-        db.commit()
+        # The tests need a free stand; a real run going on is never touched — the tests wait for another time.
+        if db.query(LabE2eRun).filter(LabE2eRun.status.in_(["queued", "claimed", "waiting", "running"])).count():
+            pytest.skip("на стенді йде прогін; тести прогонів запустіть після нього")
         created = create_workflow({"name": "Тест прогонів E2E"}, db)
         version_id = created["version"]["id"]
         save_workflow_bpmn(version_id, {"bpmn_xml": XML.replace("{binding}", "e2e-test-order")}, db)
