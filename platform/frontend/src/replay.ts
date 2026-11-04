@@ -64,12 +64,19 @@ export function frameAt(frames: Row[], t: number): number {
   return found;
 }
 
-/** Moments when a phase starts (becomes active), for jumping phase by phase. */
+/**
+ * Moment each phase first left "pending" (became active, or was proven at once), in time order,
+ * for jumping phase by phase. A phase proven together with an earlier one gets that moment.
+ */
 export function phaseMoments(run: Row, frames: Row[]): { t: number; phase: string }[] {
-  const fromTimeline = (run.timeline || [])
-    .filter((item: Row) => item.phase && item.state === "active")
-    .map((item: Row) => ({ t: ms(item.t), phase: item.phase }));
-  if (fromTimeline.length) return fromTimeline;
+  const seen = new Set<string>();
+  const fromTimeline: { t: number; phase: string }[] = [];
+  for (const item of run.timeline || []) {
+    if (!item.phase || item.state === "pending" || seen.has(item.phase)) continue;
+    seen.add(item.phase);
+    fromTimeline.push({ t: ms(item.t), phase: item.phase });
+  }
+  if (fromTimeline.length) return fromTimeline.sort((left, right) => left.t - right.t);
   const moments: { t: number; phase: string }[] = [];
   for (const frame of frames) {
     if (frame.phase && moments[moments.length - 1]?.phase !== frame.phase) moments.push({ t: ms(frame.captured_at), phase: frame.phase });

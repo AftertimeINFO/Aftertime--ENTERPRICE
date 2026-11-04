@@ -65,3 +65,18 @@ describe("screen video under a replay", () => {
     expect(replayBounds(recorded, [])!.end).toBe(Date.parse(at(50)));
   });
 });
+
+describe("jumping to a phase", () => {
+  it("reaches a phase that was proven without ever being active", async () => {
+    const { phaseMoments } = await import("./replay");
+    const quick = { ...run, timeline: [
+      { t: at(10), phase: "order", state: "active" },
+      { t: at(20), phase: "order", state: "passed" },
+      { t: at(20), phase: "issue", state: "passed" },
+      { t: at(30), phase: "pay", state: "active" },
+    ] };
+    expect(phaseMoments(quick, []).map((item) => [item.phase, item.t])).toEqual([
+      ["order", Date.parse(at(10))], ["issue", Date.parse(at(20))], ["pay", Date.parse(at(30))],
+    ]);
+  });
+});
