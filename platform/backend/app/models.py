@@ -460,6 +460,9 @@ class LabE2eRun(Base):
     timeline: Mapped[list] = mapped_column(JSONB, default=list)
     # Screen recording: {"status": packing|ready|failed, "started_at", "duration_ms", "frames", "size", "error"}.
     recording: Mapped[dict | None] = mapped_column(JSONB)
+    # Recorded windows by id: {"screen": {"title", "order", "recording": {...}}, "web": {...}};
+    # ``recording`` above mirrors the main window ("screen") for older clients.
+    streams: Mapped[dict | None] = mapped_column(JSONB)
     binding: Mapped[str] = mapped_column(String(120))
     status: Mapped[str] = mapped_column(String(20), default="queued", index=True)
     center_job_id: Mapped[str | None] = mapped_column(String(80))
@@ -556,6 +559,7 @@ class LabE2eFrame(Base):
     run_id: Mapped[str] = mapped_column(ForeignKey("lab_e2e_runs.id", ondelete="CASCADE"), index=True)
     captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     phase: Mapped[str | None] = mapped_column(String(80))
+    stream: Mapped[str] = mapped_column(String(40), default="screen", server_default="screen", index=True)
     size: Mapped[int] = mapped_column(Integer, default=0)
 
 

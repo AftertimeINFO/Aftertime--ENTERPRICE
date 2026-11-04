@@ -23,7 +23,9 @@ SendRecording = Callable[[Path, str], None]
 
 def _run(command: str, action: str, env: dict[str, str] | None = None, timeout: float = 60) -> bool:
     try:
-        result = subprocess.run(f"{command} -Action {action}", shell=True, capture_output=True,
+        # No pipes: a recorder the command leaves running would hold them open and block the bridge.
+        result = subprocess.run(f"{command} -Action {action}", shell=True, stdin=subprocess.DEVNULL,
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                 timeout=timeout, env={**os.environ, **(env or {})})
         return result.returncode == 0
     except subprocess.SubprocessError:

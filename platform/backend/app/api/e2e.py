@@ -10,6 +10,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from hashlib import sha1
+from urllib.parse import unquote
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response
 from fastapi.responses import FileResponse
@@ -17,8 +18,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import SessionLocal, get_db
-from app.models import CenterSnapshot, LabE2eFrame, LabE2eRun, LabWorkflowVersion, ReportLaunch
-from app.services.recordings import archive_path, pack, video_path
+from app.models import CenterSnapshot, LabE2eFrame, LabE2eRun, LabWorkflowVersion, ReportLaunch, ReportResult
+from app.services.recordings import MAIN_STREAM, archive_path, pack, video_path
+from app.services.report_phases import derive_states
 from app.services.tests_catalog import sync_catalog
 from app.services.reports import reports_dir
 from app.services.test_bindings import load_bindings, phase_coverage
@@ -51,7 +53,51 @@ def _summary(run: LabE2eRun) -> dict[str, Any]:
         "log_lines": len(run.log),
         "timeline": run.timeline or [],
         "recording": run.recording,
+        "streams": stream_list(run),
     }
+
+
+STREAM_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
+MAIN_TITLE = "Екран машини під тестом"
+
+
+def stream_list(run: LabE2eRun) -> list[dict[str, Any]]:
+    """Recorded windows of a run, the main one first; runs recorded before windows had ids have one."""
+    streams = dict(run.streams or {})
+    if MAIN_STREAM not in streams and run.recording:
+        streams[MAIN_STREAM] = {"title": MAIN_TITLE, "order": 0, "recording": run.recording}
+    items = [{"id": key, "title": value.get("title") or key, "order": value.get("order", 99),
+              "recording": value.get("recording")} for key, value in streams.items()]
+    return sorted(items, key=lambda item: (item["id"] != MAIN_STREAM, item["order"], item["title"]))
+
+
+def _stream(request: Request) -> str:
+    stream = (request.headers.get("x-stream") or MAIN_STREAM).strip().lower()
+    if not STREAM_RE.match(stream):
+        raise HTTPException(422, "invalid stream id")
+    return stream
+
+
+def _stream_title(request: Request) -> str | None:
+    # The bridge percent-encodes titles: HTTP headers carry Latin-1 only.
+    title = request.headers.get("x-stream-title")
+    return unquote(title) if title else None
+
+
+def _register_stream(db: Session, run: LabE2eRun, stream: str, title: str | None,
+                     recording: dict[str, Any] | None = None) -> None:
+    # Windows of one run upload and pack at the same time: read the latest list under a row lock.
+    db.refresh(run, attribute_names=["streams", "recording"], with_for_update=True)
+    streams = dict(run.streams or {})
+    entry = dict(streams.get(stream) or {"title": MAIN_TITLE if stream == MAIN_STREAM else stream, "order": len(streams)})
+    if title:
+        entry["title"] = title[:120]
+    if recording is not None:
+        entry["recording"] = recording
+        if stream == MAIN_STREAM:
+            run.recording = recording
+    streams[stream] = entry
+    run.streams = streams
 
 
 def _get_run(db: Session, run_id: str) -> LabE2eRun:
@@ -158,6 +204,41 @@ def list_e2e_runs(version_id: str, db: Session = Depends(get_db)) -> list[dict[s
         .limit(20)
     )
     return [_summary(run) for run in runs]
+
+
+@router.get("/workflows/{version_id}/report-results")
+def workflow_report_results(version_id: str, limit: int = 10, db: Session = Depends(get_db)) -> list[dict[str, Any]]:
+    """Latest report results of the bound test, each with its phases painted from the report steps.
+
+    Covers runs started anywhere: from this process, as part of a suite, or by the control center.
+    """
+    version = db.get(LabWorkflowVersion, version_id)
+    if not version:
+        raise HTTPException(404, "Workflow not found")
+    bindings = load_bindings()
+    coverage = phase_coverage(version.bpmn_xml, bindings)
+    binding = bindings.get(coverage["binding"]) if coverage else None
+    cases = (binding or {}).get("runner", {}).get("cases") or []
+    if not cases:
+        return []
+    rows = db.execute(
+        select(ReportResult, ReportLaunch)
+        .join(ReportLaunch, ReportLaunch.id == ReportResult.launch_id)
+        .where(ReportResult.full_name.in_(cases))
+        .order_by(ReportResult.start.desc().nulls_last())
+        .limit(max(1, min(limit, 50)))
+    ).all()
+    return [{
+        "id": result.id,
+        "case": result.full_name,
+        "status": result.status,
+        "message": result.message,
+        "start": result.start,
+        "duration_ms": result.duration_ms,
+        "launch": {"id": launch.id, "name": launch.name, "e2e_run_id": launch.e2e_run_id},
+        "states": [{key: value for key, value in item.items() if key != "at"}
+                   for item in derive_states(binding, result.status, result.data or {}, result.message)],
+    } for result, launch in rows]
 
 
 @router.get("/e2e-runs/{run_id}")
@@ -299,31 +380,39 @@ def _current_phase(run: LabE2eRun) -> str | None:
 async def add_frame(run_id: str, request: Request, db: Session = Depends(get_db)) -> dict[str, Any]:
     """A JPEG of the machine under test from the bridge; the current phase is recorded with it."""
     run = _get_run(db, run_id)
+    stream = _stream(request)
     body = await request.body()
     if not body or len(body) > FRAME_LIMIT or not body.startswith(JPEG_MAGIC):
         raise HTTPException(422, "JPEG frame expected")
     digest = sha1(body).hexdigest()
-    if _last_frame.get(run_id) == digest:
+    key = f"{run_id}:{stream}"
+    if _last_frame.get(key) == digest:
         return {"stored": False}
     try:
         captured = datetime.fromisoformat(request.headers.get("x-captured-at", ""))
     except ValueError:
         captured = datetime.now(UTC)
-    frame = LabE2eFrame(run_id=run.id, captured_at=captured, phase=_current_phase(run), size=len(body))
+    title = _stream_title(request)
+    if stream not in (run.streams or {}) or (title and title != run.streams[stream].get("title")):
+        _register_stream(db, run, stream, title)
+    frame = LabE2eFrame(run_id=run.id, captured_at=captured, phase=_current_phase(run), stream=stream, size=len(body))
     db.add(frame)
     db.flush()
     path = _frame_path(run.id, frame.id)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(body)
     db.commit()
-    _last_frame[run_id] = digest
-    return {"stored": True, "id": frame.id, "phase": frame.phase}
+    _last_frame[key] = digest
+    return {"stored": True, "id": frame.id, "phase": frame.phase, "stream": stream}
 
 
 @router.get("/e2e-runs/{run_id}/frames")
-def frames(run_id: str, db: Session = Depends(get_db)) -> list[dict[str, Any]]:
-    rows = db.scalars(select(LabE2eFrame).where(LabE2eFrame.run_id == run_id).order_by(LabE2eFrame.captured_at))
-    return [{"id": row.id, "captured_at": row.captured_at, "phase": row.phase} for row in rows]
+def frames(run_id: str, stream: str | None = None, db: Session = Depends(get_db)) -> list[dict[str, Any]]:
+    query = select(LabE2eFrame).where(LabE2eFrame.run_id == run_id)
+    if stream:
+        query = query.where(LabE2eFrame.stream == stream)
+    rows = db.scalars(query.order_by(LabE2eFrame.captured_at))
+    return [{"id": row.id, "captured_at": row.captured_at, "phase": row.phase, "stream": row.stream} for row in rows]
 
 
 @router.get("/e2e-frames/{frame_id}")
@@ -338,22 +427,30 @@ def frame_image(frame_id: str, db: Session = Depends(get_db)) -> FileResponse:
 RECORDING_LIMIT = 2 * 1024 * 1024 * 1024
 
 
-def pack_recording(run_id: str) -> None:
+def _recording_of(run: LabE2eRun, stream: str) -> dict[str, Any]:
+    entry = (run.streams or {}).get(stream) or {}
+    if stream == MAIN_STREAM and not entry.get("recording"):
+        return dict(run.recording or {})
+    return dict(entry.get("recording") or {})
+
+
+def pack_recording(run_id: str, stream: str = MAIN_STREAM) -> None:
     """Background job: zip of frames → MP4, then drop the live frames the video makes redundant."""
     with SessionLocal() as db:
         run = db.get(LabE2eRun, run_id)
         if not run:
             return
         try:
-            result = pack(run_id)
+            result = pack(run_id, stream)
         except Exception as exc:  # the zip stays on disk, so packing can be retried
-            run.recording = {**(run.recording or {}), "status": "failed", "error": str(exc)[:500]}
+            _register_stream(db, run, stream, None, {**_recording_of(run, stream), "status": "failed", "error": str(exc)[:500]})
             db.commit()
             return
-        run.recording = {**(run.recording or {}), "status": "ready", **result}
+        _register_stream(db, run, stream, None, {**_recording_of(run, stream), "status": "ready", **result})
         keep: set[str] = set()
         kept_phases: set[str | None] = set()
-        rows = list(db.scalars(select(LabE2eFrame).where(LabE2eFrame.run_id == run_id).order_by(LabE2eFrame.captured_at)))
+        rows = list(db.scalars(select(LabE2eFrame).where(LabE2eFrame.run_id == run_id, LabE2eFrame.stream == stream)
+                               .order_by(LabE2eFrame.captured_at)))
         for row in rows:
             # The first frame of each phase stays as its picture; the video holds the rest.
             if row.phase not in kept_phases:
@@ -370,34 +467,40 @@ def pack_recording(run_id: str) -> None:
 async def add_recording(run_id: str, request: Request, background: BackgroundTasks, db: Session = Depends(get_db)) -> dict[str, Any]:
     """The whole screen recording of a run (zip of frames named by ms); packed in the background."""
     run = _get_run(db, run_id)
+    stream = _stream(request)
     body = await request.body()
     if not body or len(body) > RECORDING_LIMIT or not body.startswith(b"PK"):
         raise HTTPException(422, "zip of JPEG frames expected")
-    target = archive_path(run.id)
+    target = archive_path(run.id, stream)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(body)
-    run.recording = {"status": "packing", "started_at": request.headers.get("x-recording-started-at") or datetime.now(UTC).isoformat(),
-                     "archive_size": len(body)}
+    recording = {"status": "packing", "started_at": request.headers.get("x-recording-started-at") or datetime.now(UTC).isoformat(),
+                 "archive_size": len(body)}
+    _register_stream(db, run, stream, _stream_title(request), recording)
     db.commit()
-    background.add_task(pack_recording, run.id)
-    return run.recording
+    background.add_task(pack_recording, run.id, stream)
+    return recording
 
 
 @router.post("/e2e-runs/{run_id}/recording/pack")
-def repack_recording(run_id: str, background: BackgroundTasks, db: Session = Depends(get_db)) -> dict[str, Any]:
+def repack_recording(run_id: str, background: BackgroundTasks, stream: str = MAIN_STREAM,
+                     db: Session = Depends(get_db)) -> dict[str, Any]:
     """Pack again a recording whose packing failed or was interrupted."""
     run = _get_run(db, run_id)
-    if not archive_path(run.id).exists():
+    if not STREAM_RE.match(stream) or not archive_path(run.id, stream).exists():
         raise HTTPException(404, "no recording waiting to be packed")
-    run.recording = {**(run.recording or {}), "status": "packing", "error": None}
+    recording = {**_recording_of(run, stream), "status": "packing", "error": None}
+    _register_stream(db, run, stream, None, recording)
     db.commit()
-    background.add_task(pack_recording, run.id)
-    return run.recording
+    background.add_task(pack_recording, run.id, stream)
+    return recording
 
 
 @router.get("/e2e-runs/{run_id}/recording.mp4")
-def recording_video(run_id: str) -> FileResponse:
-    path = video_path(run_id)
+def recording_video(run_id: str, stream: str = MAIN_STREAM) -> FileResponse:
+    if not STREAM_RE.match(stream):
+        raise HTTPException(404, "video not ready")
+    path = video_path(run_id, stream)
     if not path.exists():
         raise HTTPException(404, "video not ready")
     return FileResponse(path, media_type="video/mp4")

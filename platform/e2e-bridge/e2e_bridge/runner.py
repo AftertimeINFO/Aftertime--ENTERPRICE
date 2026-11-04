@@ -17,6 +17,36 @@ from e2e_bridge.center import FINISHED, Center
 from e2e_bridge.phases import changes, folder_entries, phase_states, read_proofs
 
 Sink = Callable[[dict[str, Any]], None]
+MAIN_SCREEN = "screen"
+
+
+@dataclass(frozen=True)
+class Screen:
+    """A window recorded during a run: the machine under test, or an application around it."""
+
+    id: str
+    title: str
+    command: str
+    seconds: float = 3
+
+
+def load_screens(values: dict[str, str]) -> list[Screen]:
+    """``SCREEN_COMMAND`` is the main window; ``SCREENS_FILE`` (JSON list) adds the others::
+
+        [{"id": "web", "title": "Веб-застосунок", "command": "...", "seconds": 2}]
+    """
+    seconds = float(values.get("SCREEN_SECONDS", 3))
+    screens = []
+    if values.get("SCREEN_COMMAND"):
+        screens.append(Screen(MAIN_SCREEN, values.get("SCREEN_TITLE") or "Екран машини під тестом",
+                              values["SCREEN_COMMAND"], seconds))
+    path = Path(values["SCREENS_FILE"]) if values.get("SCREENS_FILE") else None
+    if path and path.exists():
+        for item in json.loads(path.read_text(encoding="utf-8-sig")):
+            if isinstance(item, dict) and item.get("id") and item.get("command") and item["id"] != MAIN_SCREEN:
+                screens.append(Screen(str(item["id"]), str(item.get("title") or item["id"]), str(item["command"]),
+                                      float(item.get("seconds", seconds))))
+    return screens
 _PATH_RE = re.compile(r"[A-Za-z]:\\[^\s\"'()]+")
 
 
@@ -29,6 +59,7 @@ class Settings:
     packs_dir: Path | None = None
     screen_command: str = ""
     screen_seconds: float = 3
+    screens: list[Screen] = field(default_factory=list)
     live_command: str = ""
     poll_seconds: float = 5
     live_seconds: float = 20
@@ -50,6 +81,7 @@ class Settings:
             packs_dir=Path(values["PACKS_DIR"]) if values.get("PACKS_DIR") else None,
             screen_command=values.get("SCREEN_COMMAND", ""),
             screen_seconds=float(values.get("SCREEN_SECONDS", 3)),
+            screens=load_screens(values),
             live_command=values.get("LIVE_COMMAND", ""),
             poll_seconds=float(values.get("POLL_SECONDS", 5)),
             live_seconds=float(values.get("LIVE_SECONDS", 20)),

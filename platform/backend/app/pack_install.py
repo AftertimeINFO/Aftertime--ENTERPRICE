@@ -12,6 +12,7 @@ from typing import Any
 
 from fastapi import HTTPException
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.api.model_lab import clone_workflow, create_workflow, publish_workflow, save_workflow_bpmn, validate_workflow
@@ -68,9 +69,10 @@ def install_pack(db: Session, pack: Pack) -> dict[str, Any]:
         try:
             report["processes"].append(import_process(db, pack, file.read_text(encoding="utf-8"),
                                                       publish=pack.manifest.get("publish", True)))
-        except (ValueError, HTTPException) as exc:
+        except (ValueError, HTTPException, SQLAlchemyError) as exc:
+            # One broken process must not stop the rest of the pack.
             db.rollback()
-            detail = exc.detail if isinstance(exc, HTTPException) else str(exc)
+            detail = exc.detail if isinstance(exc, HTTPException) else str(exc).splitlines()[0]
             report["processes"].append({"file": file.name, "action": "failed", "errors": detail})
     row = db.get(LabPack, pack.id)
     row.report = report

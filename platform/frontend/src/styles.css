@@ -1756,8 +1756,7 @@ pre {
 .workbench.process-only > .palette,
 .workbench.process-only > .inspector { display: none; }
 
-/* During a run the field is split: the process on the left, the machine screen on the right */
-.native-bpmn-editor.with-screen .native-bpmn-canvas { width: 52%; }
+/* During a run the recorded windows float over the field (ScreenWorkspace, ux.css) */
 .bpmn-screen-pane {
   position: absolute;
   top: 0;
@@ -1777,7 +1776,7 @@ pre {
 .bpmn-screen-pane .vm-screen header span { color: #9fb3ab; }
 .bpmn-screen-pane .vm-screen.empty { padding: 40px 0; text-align: center; }
 .bpmn-screen-show { position: absolute; right: 18px; bottom: 18px; z-index: 6; }
-.native-bpmn-editor.with-screen .bpmn-properties { right: calc(48% + 18px); }
+.native-bpmn-editor.with-screen .bpmn-properties { right: calc(42% + 18px); }
 /* While the screen is shown the diagram needs all its room; the process overview returns after. */
 .native-bpmn-editor.with-screen .bpmn-properties.process-overview { display: none; }
 .bpmn-screen-pane button.link { justify-self: start; padding: 0; border: 0; background: none; color: #9ec9ff; cursor: pointer; font-size: 11px; }

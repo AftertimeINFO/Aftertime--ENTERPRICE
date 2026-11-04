@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import threading
 import time
+import urllib.parse
 import urllib.request
 from datetime import datetime
 from typing import Any, Callable
@@ -12,7 +13,7 @@ from typing import Any, Callable
 from e2e_bridge.center import Center, CenterError
 from e2e_bridge.phases import PASSED, Proof, changes, phase_states
 from e2e_bridge.results import Uploader, launches_since, newest_launch_for
-from e2e_bridge.runner import Binding, Settings, follow
+from e2e_bridge.runner import MAIN_SCREEN, Binding, Screen, Settings, follow
 from e2e_bridge.screen import ScreenRecorder
 
 
@@ -38,25 +39,34 @@ class Aftertime:
     def push_state(self, state: dict[str, Any]) -> None:
         self._call("POST", "/lab/center/state", state)
 
-    def frame(self, run_id: str, jpeg: bytes, captured_at: str) -> None:
+    def frame(self, run_id: str, jpeg: bytes, captured_at: str, stream: str = MAIN_SCREEN, title: str = "") -> None:
         request = urllib.request.Request(
             f"{self.url}/lab/e2e-runs/{run_id}/frames", method="POST", data=jpeg,
-            headers={"Content-Type": "image/jpeg", "X-Captured-At": captured_at},
+            headers={"Content-Type": "image/jpeg", "X-Captured-At": captured_at, **_stream_headers(stream, title)},
         )
         with urllib.request.urlopen(request, timeout=self.timeout) as response:
             response.read()
 
-    def recording(self, run_id: str, archive: Any, started_at: str) -> None:
+    def recording(self, run_id: str, archive: Any, started_at: str, stream: str = MAIN_SCREEN, title: str = "") -> None:
         """Upload the zip of screen frames of a run; Aftertime packs it into a video."""
         request = urllib.request.Request(
             f"{self.url}/lab/e2e-runs/{run_id}/recording", method="POST", data=archive.read_bytes(),
-            headers={"Content-Type": "application/zip", "X-Recording-Started-At": started_at},
+            headers={"Content-Type": "application/zip", "X-Recording-Started-At": started_at,
+                     **_stream_headers(stream, title)},
         )
         with urllib.request.urlopen(request, timeout=600) as response:
             response.read()
 
     def report(self, run_id: str, events: list[dict[str, Any]]) -> dict[str, Any]:
         return self._call("POST", f"/lab/e2e-runs/{run_id}/events", {"events": events})
+
+
+def _stream_headers(stream: str, title: str) -> dict[str, str]:
+    headers = {"X-Stream": stream}
+    if title:
+        # HTTP headers are Latin-1: the title travels percent-encoded.
+        headers["X-Stream-Title"] = urllib.parse.quote(title)
+    return headers
 
 
 class AftertimeSink:
@@ -122,6 +132,38 @@ def simulate(
     return result
 
 
+class Screens:
+    """Every window of the settings recorded side by side; closing packs them all at once."""
+
+    def __init__(self, settings: Settings, sink: AftertimeSink, run_id: str) -> None:
+        self.sink = sink
+        screens = settings.screens or ([Screen(MAIN_SCREEN, "", settings.screen_command, settings.screen_seconds)]
+                                       if settings.screen_command else [])
+        self.recorders = [(screen, ScreenRecorder(
+            screen.command,
+            lambda jpeg, at, screen=screen: sink.aftertime.frame(run_id, jpeg, at, screen.id, screen.title),
+            screen.seconds,
+            send_recording=lambda archive, started, screen=screen: sink.aftertime.recording(
+                run_id, archive, started, screen.id, screen.title),
+        )) for screen in screens]
+
+    def start(self) -> None:
+        for _, recorder in self.recorders:
+            recorder.start()
+
+    def close(self) -> None:
+        threads = [threading.Thread(target=recorder.close) for _, recorder in self.recorders]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        for screen, recorder in self.recorders:
+            if recorder.started_at:
+                self.sink({"type": "log", "line": f"Aftertime: вікно «{screen.title or screen.id}» — живих кадрів "
+                                                  f"{recorder.frames}; запис для відео "
+                                                  f"{'передано, пакується у фоні' if recorder.recorded else 'не отримано'}"})
+
+
 def execute(
     run: dict[str, Any],
     bindings: dict[str, Binding],
@@ -142,22 +184,15 @@ def execute(
         return
     should_stop = lambda: sink.stop_requested  # noqa: E731
     started = datetime.now()
-    # The screen is recorded for simulations too: the phases are timed, the screen is real.
-    screen = ScreenRecorder(
-        settings.screen_command,
-        lambda jpeg, at: sink.aftertime.frame(run["id"], jpeg, at),
-        settings.screen_seconds,
-        send_recording=lambda archive, started: sink.aftertime.recording(run["id"], archive, started),
-    ) if settings.screen_command else None
-    if screen:
-        screen.start()
+    # The windows are recorded for simulations too: the phases are timed, the screens are real.
+    screens = Screens(settings, sink, run["id"])
+    screens.start()
     if simulation is not None:
         try:
             sink({"type": "queued", "job": f"simulation-{run['id'][:8]}", "ahead": 0})
             simulate(binding, f"simulation-{run['id'][:8]}", sink, should_stop=should_stop, **simulation)
         finally:
-            if screen:
-                screen.close()
+            screens.close()
         return
     try:
         busy = center.busy()
@@ -169,10 +204,7 @@ def execute(
         sink({"type": "error", "message": f"Центр E2E недоступний: {exc}"})
         return
     finally:
-        if screen:
-            screen.close()
-            sink({"type": "log", "line": f"Aftertime: живих кадрів екрана {screen.frames}; запис для відео "
-                                         f"{'передано, пакується у фоні' if screen.recorded else 'не отримано'}"})
+        screens.close()
     import_report(settings, binding, run["id"], started, sink, every_launch=run.get("kind") == "center")
 
 

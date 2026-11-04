@@ -24,12 +24,20 @@ def recordings_dir() -> Path:
     return reports_dir() / "recordings"
 
 
-def archive_path(run_id: str) -> Path:
-    return recordings_dir() / f"{run_id}.zip"
+MAIN_STREAM = "screen"
 
 
-def video_path(run_id: str) -> Path:
-    return recordings_dir() / f"{run_id}.mp4"
+def _name(run_id: str, stream: str) -> str:
+    # The main window keeps the file names recordings had before there were several windows.
+    return run_id if stream == MAIN_STREAM else f"{run_id}.{stream}"
+
+
+def archive_path(run_id: str, stream: str = MAIN_STREAM) -> Path:
+    return recordings_dir() / f"{_name(run_id, stream)}.zip"
+
+
+def video_path(run_id: str, stream: str = MAIN_STREAM) -> Path:
+    return recordings_dir() / f"{_name(run_id, stream)}.mp4"
 
 
 def frame_offsets(names: list[str]) -> list[tuple[str, int]]:
@@ -54,9 +62,9 @@ def concat_list(frames: list[tuple[Path, int]]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def pack(run_id: str) -> dict[str, Any]:
-    """Turn the stored zip of frames into ``<run>.mp4``; the zip is removed on success."""
-    archive = archive_path(run_id)
+def pack(run_id: str, stream: str = MAIN_STREAM) -> dict[str, Any]:
+    """Turn the stored zip of frames into ``<run>[.<stream>].mp4``; the zip is removed on success."""
+    archive = archive_path(run_id, stream)
     with tempfile.TemporaryDirectory() as work:
         root = Path(work)
         with zipfile.ZipFile(archive) as bundle:
@@ -82,11 +90,11 @@ def pack(run_id: str) -> dict[str, Any]:
         result = subprocess.run(command, capture_output=True, text=True, timeout=1800)
         if result.returncode != 0 or not output.exists():
             raise RuntimeError(f"ffmpeg: {result.stderr.strip()[-500:]}")
-        video_path(run_id).parent.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(output), video_path(run_id))
+        video_path(run_id, stream).parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(output), video_path(run_id, stream))
     archive.unlink(missing_ok=True)
     return {
         "frames": len(frames),
         "duration_ms": frames[-1][1] + int(LAST_FRAME_SECONDS * 1000),
-        "size": video_path(run_id).stat().st_size,
+        "size": video_path(run_id, stream).stat().st_size,
     }

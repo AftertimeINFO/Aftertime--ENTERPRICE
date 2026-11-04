@@ -134,6 +134,10 @@ def import_launch(db: Session, payload: dict[str, Any]) -> dict[str, Any]:
             db.add(ReportAttachment(source=source, content_type=content_type))
     db.commit()
     needed = sorted(source for source in sources if source not in stored or not stored[source].stored)
+    if created and launch.e2e_run_id:
+        from app.services.report_phases import apply_to_run
+
+        apply_to_run(db, launch)
     return {"launch_id": launch.id, "created": created, "attachments_needed": needed}
 
 

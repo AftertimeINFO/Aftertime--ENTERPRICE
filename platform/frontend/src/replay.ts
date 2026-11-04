@@ -4,7 +4,7 @@ import type { Row } from "./api";
 
 const ms = (value: string | undefined | null): number => (value ? new Date(value).getTime() : NaN);
 
-/** Start and end (ms) of the run's screen video, when it is packed. */
+/** Start and end (ms) of the run's screen video (or of ``run.recording`` of any window), when it is packed. */
 export function recordingSpan(run: Row): number[] {
   const recording = run.recording;
   if (recording?.status !== "ready") return [];
@@ -28,6 +28,7 @@ export function replayBounds(run: Row, frames: Row[]): Bounds | null {
     ms(run.claimed_at),
     ms(run.finished_at),
     ...recordingSpan(run),
+    ...(run.streams || []).flatMap((stream: Row) => recordingSpan(stream)),
   ].filter((value) => !Number.isNaN(value));
   if (!times.length) return null;
   const start = Math.min(...times);

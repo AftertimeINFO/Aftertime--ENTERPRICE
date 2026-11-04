@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type Row } from "./api";
+import { streamsOf, type ScreenStream } from "./ScreenWorkspace";
 import { VmScreen } from "./VmScreen";
 import { E2E_MARKERS, elementMarkers, isActive, phaseSummary, runStatusLabel } from "./e2eRun";
 import { formatOffset, phaseMoments, replayBounds, replayStates, type Bounds } from "./replay";
 
 export type ReplayRequest = { runId: string; nonce: number };
-export type ScreenView = { runId: string; active: boolean; focusPhase: string | null; at: number | null; recording: Row | null };
+export type ScreenView = { runId: string; active: boolean; focusPhase: string | null; at: number | null; streams: ScreenStream[] };
 type Replay = { t: number; playing: boolean; speed: number; frames: Row[]; bounds: Bounds };
 const SPEEDS = [1, 5, 10, 30, 60];
 
@@ -29,13 +30,21 @@ export function E2ePanel({ workflow, viewer, onError, onOpenReport, onScreen, re
   const [lines, setLines] = useState<string[]>([]);
   const [focusPhase, setFocusPhase] = useState<string | null>(null);
   const [replay, setReplay] = useState<Replay | null>(null);
+  // Results of the bound test from reports (runs of a whole suite included), painted on demand.
+  const [reportResults, setReportResults] = useState<Row[]>([]);
+  const [reportView, setReportView] = useState<Row | null>(null);
+  useEffect(() => {
+    setReportView(null);
+    api.workflowReportResults(versionId).then(setReportResults).catch(() => setReportResults([]));
+  }, [versionId, run?.status]);
   const pendingReplay = useRef<string | null>(replayRequest?.runId || null);
   const runId = run?.id;
   const runActive = isActive(run);
   const replayAt = replay ? replay.t : null;
   useEffect(() => {
-    onScreen?.(runId ? { runId, active: runActive, focusPhase, at: replayAt, recording: run?.recording || null } : null);
-  }, [onScreen, runId, runActive, focusPhase, replayAt, run?.recording]);
+    onScreen?.(runId ? { runId, active: runActive, focusPhase, at: replayAt, streams: streamsOf(run) } : null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onScreen, runId, runActive, focusPhase, replayAt, JSON.stringify(run?.streams || []), run?.recording?.status]);
   useEffect(() => () => onScreen?.(null), [onScreen]);
   const next = useRef(0);
   const painted = useRef<string[]>([]);
@@ -72,8 +81,9 @@ export function E2ePanel({ workflow, viewer, onError, onOpenReport, onScreen, re
     return () => { alive = false; window.clearTimeout(timer); };
   }, [selectedId, refreshList, onError]);
 
-  // While replaying, the run is shown as it was at the replayed moment.
-  const shown = run && replay ? {
+  // While replaying, the run is shown as it was at the replayed moment; a picked report result instead of the run.
+  const shown = reportView ? { states: reportView.states, status: reportView.status === "broken" ? "failed" : reportView.status }
+    : run && replay ? {
     ...run,
     states: replayStates(run, replay.frames, replay.t, replay.bounds),
     status: replay.t >= replay.bounds.end ? run.status : "running",
@@ -108,7 +118,7 @@ export function E2ePanel({ workflow, viewer, onError, onOpenReport, onScreen, re
     return () => window.clearInterval(timer);
   }, [replay?.playing]);
 
-  useEffect(() => setReplay(null), [selectedId]);
+  useEffect(() => { setReplay(null); setReportView(null); }, [selectedId]);
   useEffect(() => {
     if (!replayRequest) return;
     pendingReplay.current = replayRequest.runId;
@@ -142,7 +152,8 @@ export function E2ePanel({ workflow, viewer, onError, onOpenReport, onScreen, re
     if (!viewer) return;
     const canvas = viewer.get("canvas");
     const registry = viewer.get("elementRegistry");
-    for (const id of painted.current) for (const marker of E2E_MARKERS) canvas.removeMarker(id, marker);
+    // Another process may be open by now: only its own elements can lose their markers.
+    for (const id of painted.current.filter((item) => registry.get(item))) for (const marker of E2E_MARKERS) canvas.removeMarker(id, marker);
     const markers = elementMarkers(shown, workflow.nodes);
     painted.current = Object.keys(markers).filter((id) => registry.get(id));
     for (const id of painted.current) canvas.addMarker(id, markers[id]);
@@ -169,7 +180,12 @@ export function E2ePanel({ workflow, viewer, onError, onOpenReport, onScreen, re
       {isActive(run) ? <button onClick={stop} disabled={run?.stop_requested}>{run?.stop_requested ? "Зупиняється…" : "Зупинити"}</button>
         : <button onClick={start} disabled={!workflow.test.covered || !!activeRun}>Запустити тест</button>}
     </header>
-    <div className={`e2e-status ${shown?.status || "none"}`}>{replay ? "Відтворення · " : ""}{runStatusLabel(shown)}{shown ? ` · ${phaseSummary(shown)}` : ""}</div>
+    <div className={`e2e-status ${shown?.status || "none"}`}>{replay ? "Відтворення · " : reportView ? "Зі звіту · " : ""}{runStatusLabel(shown)}{shown ? ` · ${phaseSummary(shown)}` : ""}</div>
+    {reportView && <div className="report-view-note">
+      <span>Результат {new Date(reportView.start).toLocaleString("uk-UA")}{reportView.message ? ` — ${reportView.message.slice(0, 160)}` : ""}</span>
+      {onOpenReport && <button className="link" onClick={() => onOpenReport(reportView.launch.id)}>Звіт</button>}
+      <button className="link" onClick={() => setReportView(null)}>✕ до прогону</button>
+    </div>}
     {replay && <div className="replay-controls">
       <button title="На початок" onClick={() => seek(replay.bounds.start)}>⏮</button>
       <button title={replay.playing ? "Пауза" : "Програти"} onClick={togglePlay}>{replay.playing ? "⏸" : "▶"}</button>
@@ -194,11 +210,23 @@ export function E2ePanel({ workflow, viewer, onError, onOpenReport, onScreen, re
       {runs.map((item) => <li key={item.id} className={item.id === selectedId ? "selected" : ""}>
         <button className="link" onClick={() => setSelectedId(item.id)}>{new Date(item.created_at).toLocaleString("uk-UA")}</button>
         <span className={`e2e-status ${item.status}`}>{runStatusLabel(item)}</span>
-        {!isActive(item) && <button title="Програти виконаний тест: фази на BPMN і екран VM у часі" onClick={() => {
+        {!isActive(item) && <button title="Програти виконаний тест: фази на BPMN і записані вікна в часі" onClick={() => {
           if (item.id === selectedId && run) startReplay(run);
           else { pendingReplay.current = item.id; setSelectedId(item.id); }
         }}>▶ Програти</button>}
       </li>)}
     </ul>}
+    {reportResults.length > 0 && <details className="e2e-report-results" open={!runs.length}>
+      <summary>Результати тесту зі звітів ({reportResults.length})</summary>
+      <ul className="e2e-runs">
+        {reportResults.map((item) => <li key={item.id} className={item.id === reportView?.id ? "selected" : ""}>
+          <button className="link" title="Показати фази цього результату на схемі" onClick={() => { setReplay(null); setReportView(item); }}>
+            {new Date(item.start).toLocaleString("uk-UA")}
+          </button>
+          <span className={`e2e-status ${item.status === "broken" ? "failed" : item.status}`}>{runStatusLabel({ status: item.status === "broken" ? "failed" : item.status })}</span>
+          <small className="muted">{item.launch?.name}</small>
+        </li>)}
+      </ul>
+    </details>}
   </aside>;
 }

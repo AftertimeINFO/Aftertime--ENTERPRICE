@@ -46,3 +46,16 @@ def test_recording_is_packed_and_sent_after_the_run():
     recorder.close()
     assert recordings and recordings[0][0] == b"PK zip"
     assert recordings[0][1] == recorder.started_at and recorder.recorded
+
+
+def test_screens_are_the_main_window_and_the_listed_ones(tmp_path):
+    import json
+
+    from e2e_bridge.runner import load_screens
+
+    listed = tmp_path / "screens.json"
+    listed.write_text(json.dumps([{"id": "web", "title": "Веб-застосунок", "command": "web", "seconds": 2},
+                                  {"id": "screen", "command": "ignored"}, {"title": "без id"}]), encoding="utf-8")
+    screens = load_screens({"SCREEN_COMMAND": "vm", "SCREEN_SECONDS": "3", "SCREENS_FILE": str(listed)})
+    assert [(item.id, item.command, item.seconds) for item in screens] == [("screen", "vm", 3.0), ("web", "web", 2.0)]
+    assert load_screens({}) == []

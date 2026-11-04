@@ -128,7 +128,7 @@ async def test_frames_record_the_running_phase_and_skip_identical_screens(publis
                                               {"type": "phase", "phase": "issue", "state": "active"}]}, db)
         second = await add_frame(run["id"], Body(bytes([0xFF, 0xD8]) + b"two", "2026-11-04T10:00:06+00:00"), db)
         assert first["phase"] == "order" and same == {"stored": False} and second["phase"] == "issue"
-        assert [item["phase"] for item in frames(run["id"], db)] == ["order", "issue"]
+        assert [item["phase"] for item in frames(run["id"], db=db)] == ["order", "issue"]
         assert frame_image(first["id"], db).media_type == "image/jpeg"
         with pytest.raises(HTTPException):
             await add_frame(run["id"], Body(b"not a jpeg", "2026-11-04T10:00:09+00:00"), db)
@@ -191,5 +191,42 @@ async def test_recording_is_packed_and_live_frames_reduced_to_one_per_phase(publ
         assert detail["recording"]["status"] == "ready"
         assert detail["recording"]["started_at"] == "2026-11-04T10:00:00+00:00"
         assert video_path(run["id"]).exists()
-        assert len(frames(run["id"], db)) == 1  # one picture of the phase stays
+        assert len(frames(run["id"], db=db)) == 1  # one picture of the phase stays
+        stop_e2e_run(run["id"], db)
+
+
+@pytest.mark.anyio
+async def test_every_recorded_window_keeps_its_own_frames_and_video(published, tmp_path, monkeypatch):
+    from app.api.e2e import add_frame, add_recording, frames, pack_recording, recording_video
+    from tests.test_recordings import jpeg, recording_zip
+
+    monkeypatch.setenv("REPORTS_DIR", str(tmp_path))
+
+    class Body:
+        def __init__(self, data, headers):
+            self.data, self.headers = data, headers
+
+        async def body(self):
+            return self.data
+
+    class Background:
+        def add_task(self, func, *args):
+            func(*args)
+
+    with SessionLocal() as db:
+        run = start_e2e_run(published, db)
+        web = {"x-stream": "web", "x-stream-title": "%D0%92%D0%B5%D0%B1", "x-captured-at": "2026-11-04T10:00:00+00:00"}
+        await add_frame(run["id"], Body(jpeg("red"), {"x-captured-at": "2026-11-04T10:00:00+00:00"}), db)
+        await add_frame(run["id"], Body(jpeg("red"), web), db)  # the same picture in another window is stored
+        assert [item["stream"] for item in frames(run["id"], db=db)] == ["screen", "web"]
+        assert [item["id"] for item in frames(run["id"], "web", db)] != []
+        with pytest.raises(HTTPException):
+            await add_frame(run["id"], Body(jpeg("red"), {"x-stream": "../etc"}), db)
+        await add_recording(run["id"], Body(recording_zip([0, 1000]), {"x-stream": "web"}), Background(), db)
+        db.expire_all()
+        streams = {item["id"]: item for item in e2e_run(run["id"], 0, db)["streams"]}
+        assert streams["web"]["title"] == "Веб"
+        assert streams["web"]["recording"]["status"] == "ready"
+        assert streams["screen"]["recording"] is None and e2e_run(run["id"], 0, db)["recording"] is None
+        assert str(recording_video(run["id"], "web").path).endswith(".web.mp4")
         stop_e2e_run(run["id"], db)

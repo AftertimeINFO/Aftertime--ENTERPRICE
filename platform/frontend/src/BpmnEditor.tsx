@@ -8,7 +8,7 @@ import { api, type Row } from "./api";
 import { needsSvgRepair, svgStatusLabel } from "./bpmnSvg";
 import { acceptsTestPhase, phaseOptions } from "./testBindings";
 import { E2ePanel, type ReplayRequest, type ScreenView } from "./E2ePanel";
-import { VmScreen } from "./VmScreen";
+import { ScreenWorkspace } from "./ScreenWorkspace";
 
 type Props = {
   workflow: Row;
@@ -204,11 +204,9 @@ export function BpmnEditor({ workflow, immutable, onSaved, onValidation, onError
   const attrs = selected?.businessObject?.$attrs || {};
   return <div className={`native-bpmn-editor ${immutable ? "readonly" : "editable"} ${showScreen ? "with-screen" : ""}`}>
     <div className="native-bpmn-canvas" ref={container} />
-    {showScreen && screen && <section className="bpmn-screen-pane">
-      <VmScreen runId={screen.runId} active={screen.active} focusPhase={screen.focusPhase} at={screen.at} recording={screen.recording} />
-      <button className="link" onClick={() => setScreenOpen(false)}>Сховати екран VM</button>
-    </section>}
-    {screen && !screenOpen && <button className="bpmn-screen-show" onClick={() => setScreenOpen(true)}>Показати екран VM</button>}
+    {showScreen && screen && <ScreenWorkspace runId={screen.runId} active={screen.active} streams={screen.streams}
+      focusPhase={screen.focusPhase} at={screen.at} onClose={() => setScreenOpen(false)} />}
+    {screen && !screenOpen && <button className="bpmn-screen-show" onClick={() => setScreenOpen(true)}>Показати вікна прогону ({screen.streams.length})</button>}
     {!immutable && <div className="bpmn-save-strip">
       <span>{dirty ? "Є незбережені зміни" : "BPMN XML синхронізовано"}</span>
       <span className={`svg-status ${presentation?.status || "missing"}`}>{svgStatusLabel(presentation)}</span>

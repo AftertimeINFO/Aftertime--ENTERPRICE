@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type Row } from "./api";
 import { isActive, runStatusLabel } from "./e2eRun";
-import { VmScreen } from "./VmScreen";
+import { ScreenWorkspace, streamsOf } from "./ScreenWorkspace";
+import { formatOffset, replayBounds } from "./replay";
 import { STATUS_LABELS, formatDuration } from "./reports";
 import { launchTitle, needsSummary, progressView } from "./launch";
 
@@ -70,6 +71,28 @@ export function LaunchPanel({ onOpenLaunch, onError, onReplayProcess }: Props) {
     if (!current) return;
     try { await api.stopE2eRun(current.id); await refresh(); } catch (error) { onError(String(error)); }
   };
+  // A finished run is replayed with every recorded window on one clock.
+  const [replayT, setReplayT] = useState<number | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const [speed, setSpeed] = useState(10);
+  const finished = !!current && !isActive(current);
+  const bounds = finished ? replayBounds(current, []) : null;
+  useEffect(() => { setReplayT(null); setPlaying(false); }, [current?.id]);
+  useEffect(() => {
+    // "Програти" in the history opens the run and starts the replay at once.
+    if (viewId && current?.id === viewId && bounds) { setReplayT(bounds.start); setPlaying(true); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewId, current?.id]);
+  useEffect(() => {
+    if (!playing || !bounds) return;
+    const timer = window.setInterval(() => setReplayT((t) => {
+      const value = Math.min(bounds.end, (t ?? bounds.start) + 250 * speed);
+      if (value >= bounds.end) setPlaying(false);
+      return value;
+    }), 250);
+    return () => window.clearInterval(timer);
+  }, [playing, speed, bounds?.start, bounds?.end]);
+
   const toggleCase = (id: string) => setSelected((old) => old.includes(id) ? old.filter((item) => item !== id) : [...old, id]);
 
   const data = center?.data || {};
@@ -109,7 +132,22 @@ export function LaunchPanel({ onOpenLaunch, onError, onReplayProcess }: Props) {
             <li key={suite.id} className={suite.state}>{suite.title} <small>{suite.state}</small></li>)}</ol>
         </>}
         {viewId && <button className="link" onClick={() => setViewId(null)}>← до поточного запуску</button>}
-        <VmScreen runId={current.id} active={isActive(current)} autoplay={!!viewId} recording={current.recording} />
+        {bounds && <div className="replay-controls" aria-label="Відтворення всіх вікон прогону">
+          <button title={playing ? "Пауза" : "Програти всі вікна разом"} onClick={() => {
+            if (!playing && (replayT == null || replayT >= bounds.end)) setReplayT(bounds.start);
+            setPlaying(!playing);
+          }}>{playing ? "⏸" : "▶"}</button>
+          <select value={speed} title="Швидкість відтворення" onChange={(event) => setSpeed(Number(event.target.value))}>
+            {[1, 5, 10, 30, 60].map((value) => <option key={value} value={value}>{value}×</option>)}
+          </select>
+          <input type="range" aria-label="Мить прогону" min={bounds.start} max={bounds.end} step={500} value={replayT ?? bounds.start}
+            onChange={(event) => setReplayT(Number(event.target.value))} />
+          <span>{formatOffset(replayT ?? bounds.start, bounds)} / {formatOffset(bounds.end, bounds)}</span>
+          {replayT != null && <button title="Вийти з відтворення" onClick={() => { setReplayT(null); setPlaying(false); }}>✕</button>}
+        </div>}
+        <div className="launch-screens">
+          <ScreenWorkspace runId={current.id} active={isActive(current)} streams={streamsOf(current)} at={replayT} />
+        </div>
         {lines.length > 0 && <pre className="e2e-log">{lines.slice(-60).join("\n")}</pre>}
         {!!current.report_launch_ids?.length && <div className="links">{current.report_launch_ids.map((id: string) =>
           <button key={id} className="link" onClick={() => onOpenLaunch(id)}>Звіт запуску</button>)}</div>}
