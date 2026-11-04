@@ -3,6 +3,7 @@ import { api, type Row } from "./api";
 import { isActive, runStatusLabel } from "./e2eRun";
 import { ScreenWorkspace, streamsOf } from "./ScreenWorkspace";
 import { formatOffset, replayBounds } from "./replay";
+import { PrepProgress } from "./PrepProgress";
 import { STATUS_LABELS, formatDuration } from "./reports";
 import { launchTitle, needsSummary, progressView } from "./launch";
 
@@ -132,6 +133,7 @@ export function LaunchPanel({ onOpenLaunch, onError, onReplayProcess }: Props) {
             <li key={suite.id} className={suite.state}>{suite.title} <small>{suite.state}</small></li>)}</ol>
         </>}
         {viewId && <button className="link" onClick={() => setViewId(null)}>← до поточного запуску</button>}
+        <PrepProgress run={current} at={replayT} onSkip={(t) => { setReplayT(t); }} />
         {bounds && <div className="replay-controls" aria-label="Відтворення всіх вікон прогону">
           <button title={playing ? "Пауза" : "Програти всі вікна разом"} onClick={() => {
             if (!playing && (replayT == null || replayT >= bounds.end)) setReplayT(bounds.start);

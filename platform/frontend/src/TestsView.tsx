@@ -5,7 +5,7 @@ import { LaunchPanel } from "./LaunchPanel";
 import { TestDetail } from "./ReportsView";
 import { isActive, runStatusLabel } from "./e2eRun";
 import {
-  STATUS_VIEW, filterTests, percent, relativeTime, sortTests, suitesOf, type TestFilters, type TestSort,
+  STATUS_VIEW, filterTests, percent, relativeTime, routeHash, sortTests, suitesOf, type TestFilters, type TestSort,
 } from "./testsCatalog";
 import { EmptyState, StatusBadge, Trend } from "./ui";
 
@@ -182,6 +182,7 @@ function TestCard({ id, runBlocked, onClose, onRun, onOpenProcess, onError }: {
       <button className="primary" disabled={!!runBlocked || !test.active} title={runBlocked || (!test.active ? "Тест вилучено з набору" : undefined)}
         onClick={() => onRun([test.id], test.title)}>▶ Запустити тест</button>
       {test.binding && <button onClick={() => onOpenProcess(test.binding)}>Відкрити процес BPMN</button>}
+      <button title="Кроки, які стенд виконує перед цим тестом" onClick={() => { window.location.hash = routeHash("prep", test.id); }}>Підготовка перед тестом</button>
     </div>
     <dl className="test-facts">
       <div><dt>Останній запуск</dt><dd>{relativeTime(test.last?.start)}</dd></div>

@@ -41,9 +41,13 @@ services:
       AFTERTIME_CONFIG_DIR: /config
       AFTERTIME_PACKS_DIR: /packs
       REPORTS_DIR: /data/reports
+      AFTERTIME_STAND_DIR: /stand
     volumes:
       # Organization settings; the public example is used unless AFTERTIME_CONFIG_DIR is set in .env.
       - ${AFTERTIME_CONFIG_DIR:-./config.example}:/config:ro
+      # Scripts of the test stand whose preparation is viewed and edited in Aftertime (e2e/preparation.json
+      # of the settings lists the files); writable, the API writes only those files.
+      - ${AFTERTIME_STAND_DIR:-./stand.example}:/stand
       # Model packs: every sub-directory with aftertime-pack.json (the example pack by default).
       - ${AFTERTIME_PACKS_DIR:-./packs.example}:/packs:ro
       # Attachments of imported test reports (screenshots, videos, logs).

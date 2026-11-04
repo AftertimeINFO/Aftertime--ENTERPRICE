@@ -4,6 +4,7 @@ import { streamsOf, type ScreenStream } from "./ScreenWorkspace";
 import { VmScreen } from "./VmScreen";
 import { E2E_MARKERS, elementMarkers, isActive, phaseSummary, runStatusLabel } from "./e2eRun";
 import { formatOffset, phaseMoments, replayBounds, replayStates, type Bounds } from "./replay";
+import { PrepProgress } from "./PrepProgress";
 
 export type ReplayRequest = { runId: string; nonce: number };
 export type ScreenView = { runId: string; active: boolean; focusPhase: string | null; at: number | null; streams: ScreenStream[] };
@@ -197,6 +198,7 @@ export function E2ePanel({ workflow, viewer, onError, onOpenReport, onScreen, re
       <span>{formatOffset(replay.t, replay.bounds)} / {formatOffset(replay.bounds.end, replay.bounds)}</span>
       <button title="Вийти з відтворення" onClick={() => setReplay(null)}>✕</button>
     </div>}
+    {run && !reportView && <PrepProgress run={run} at={replay ? replay.t : null} onSkip={seek} />}
     {!!shown?.states?.length && <ol className="e2e-phases">
       {shown.states.map((item: Row) => <li key={item.phase} className={`e2e-${item.state}`} title={item.detail || item.evidence || (replay ? "Перейти до цієї фази" : "Показати екран VM у цій фазі")} onClick={() => replay ? jumpToPhase(item.phase) : setFocusPhase(item.phase)}>
         {item.phase}{item.inferred && item.state === "passed" ? " ·" : ""}

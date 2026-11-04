@@ -21,6 +21,7 @@ from app.db import SessionLocal, get_db
 from app.models import CenterSnapshot, LabE2eFrame, LabE2eRun, LabWorkflowVersion, ReportLaunch, ReportResult
 from app.services.recordings import MAIN_STREAM, archive_path, pack, video_path
 from app.services.report_phases import derive_states
+from app.services.stand_prep import parse_prep_line
 from app.services.tests_catalog import sync_catalog
 from app.services.reports import reports_dir
 from app.services.test_bindings import load_bindings, phase_coverage
@@ -330,7 +331,12 @@ def _apply(run: LabE2eRun, event: dict[str, Any], kind: Any, now: datetime) -> N
     elif kind == "progress":
         run.progress = event.get("progress")
     elif kind == "log":
-        run.log = (run.log + [str(event.get("line", ""))])[-LOG_LIMIT:]
+        line = str(event.get("line", ""))
+        run.log = (run.log + [line])[-LOG_LIMIT:]
+        # the stand reports each preparation step: kept on the timeline to replay "preparing the stand" step by step
+        prep = parse_prep_line(line)
+        if prep:
+            run.timeline = (run.timeline or []) + [{"t": now.isoformat(), "prep": prep}]
     elif kind == "states":
         run.states = _merge_states(run.states, event.get("states") or [])
     elif kind == "phase":

@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "enabled": false,
+  "title": "Example preparation of a test stand",
+  "note": "The stand reads this plan before its tests. Steps of stages without fixed run one by one; fixed stages describe what the stand's code does (file and anchor text).",
+  "vars": {
+    "regionKey": { "from": "region", "default": "north" }
+  },
+  "stages": [
+    {
+      "id": "machine",
+      "title": "Test machine",
+      "runs": "group",
+      "fixed": true,
+      "file": "suite/run-suite.ps1",
+      "steps": [
+        { "id": "machine-check", "title": "Check the test machine", "find": "check the test machine" }
+      ]
+    },
+    {
+      "id": "data",
+      "title": "Test data",
+      "runs": "case",
+      "session": "one-connection",
+      "steps": [
+        { "id": "clean", "title": "Remove data of earlier tests", "script": "clean-data.ps1", "args": ["-Mode", "apply", "-OutputPath", "{out}"], "scope": "suite" },
+        { "id": "accounts", "title": "Test accounts ({regionKey})", "script": "set-accounts.ps1", "args": ["-Region", "{regionKey}", "-OutputPath", "{out}"], "when": { "web": false } }
+      ]
+    }
+  ]
+}

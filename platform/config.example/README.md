@@ -11,4 +11,5 @@ AFTERTIME_CONFIG_DIR=../../Aftertime-config
 | Шлях | Що це |
 |---|---|
 | `e2e/bindings.json` | прив'язки процесів до E2E-кейсів: `title`, `phases`, `runner` (параметри для мосту запуску) |
+| `e2e/preparation.json` | підготовка стенда: `plan` (файл плану), `cases` (кейси для умов кроків), `scripts` (тека скриптів кроків), `files` (шаблони файлів, які можна відкрити й змінити). Шляхи відносно `AFTERTIME_STAND_DIR` (приклад: `stand.example`) |
 | `models/` | процеси організації: `*.bpmn` і синхронні `*.svg` (див. `tools/models.py`) |

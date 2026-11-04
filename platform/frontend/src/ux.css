@@ -195,3 +195,71 @@
 .report-view-note span { flex: 1 1 200px; }
 /* The run being followed takes the whole width: its windows need the room */
 .launch > .launch-current { grid-column: 1 / -1; }
+
+/* ===== Stand preparation: the plan, its steps, the files behind it ===== */
+.prep-view code { color: var(--ux-text); }
+.ux-notice.warn { border-color: var(--warn); background: #2e2614; }
+.prep-switch { display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid var(--ux-line); border-radius: 6px; cursor: pointer; }
+.prep-switch input { width: 34px; height: 18px; accent-color: #3f9b70; }
+.prep-stages { display: grid; gap: 14px; }
+.prep-stage { border: 1px solid var(--ux-line); border-radius: 8px; background: var(--ux-panel); }
+.prep-stage > header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; padding: 10px 14px; border-bottom: 1px solid var(--ux-line); }
+.prep-stage > header h3 { margin: 0; font-size: 15px; }
+.prep-stage.fixed { background: #0a1613; }
+.prep-step + .prep-step { border-top: 1px solid #16302a; }
+.prep-step-row { display: grid; grid-template-columns: 28px minmax(260px, 1fr) minmax(170px, 230px) 90px auto; gap: 10px; align-items: center; padding: 7px 14px; }
+.prep-stage.fixed .prep-step-row { grid-template-columns: 28px minmax(260px, 1fr) auto; }
+.prep-step-row:focus-visible { outline-offset: -2px; }
+.prep-step.open .prep-step-row { background: #12271f; }
+.prep-step.skipped .prep-title b, .prep-step.skipped .prep-when, .prep-step.skipped .prep-time { opacity: .5; }
+.prep-num { color: var(--ux-muted); text-align: center; }
+.prep-title b { font-weight: 600; }
+.prep-title small { display: block; overflow: hidden; color: var(--ux-muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.prep-title small.prep-reason { color: var(--warn); white-space: normal; }
+.prep-when { display: grid; gap: 2px; justify-items: start; }
+.prep-when .tag { margin: 0; }
+.prep-when small { color: var(--ux-muted); font-size: 11px; }
+.prep-time { text-align: right; }
+.prep-time small { display: block; color: var(--ux-muted); font-size: 11px; }
+.prep-time small.failed { color: var(--bad); }
+.prep-actions { display: flex; gap: 4px; justify-content: flex-end; }
+.prep-add { margin: 8px 14px 12px; }
+.prep-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px 14px; padding: 10px 14px 14px 52px; background: #0f211b; }
+.prep-form label { display: grid; gap: 4px; color: var(--ux-muted); font-size: 11px; }
+.prep-form input, .prep-form select, .prep-form textarea { padding: 5px 8px; color: var(--ux-text); font-size: 12px; }
+.prep-form textarea { font-family: ui-monospace, Consolas, monospace; }
+.prep-form .wide { grid-column: 1 / -1; }
+.prep-form fieldset { display: grid; gap: 6px; margin: 0; padding: 8px 10px; border: 1px solid var(--ux-line); border-radius: 6px; }
+.prep-form legend { color: var(--ux-muted); font-size: 11px; }
+.prep-condition { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.prep-form-actions { display: flex; justify-content: flex-end; }
+.prep-review, .prep-file { display: grid; gap: 10px; margin-bottom: 14px; padding: 12px 14px; border: 1px solid var(--ux-focus); border-radius: 8px; background: #0c1a24; }
+.prep-review h3, .prep-file h3 { margin: 0; font-size: 14px; }
+.prep-review-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: flex-end; }
+.prep-review-actions input { flex: 1 1 280px; padding: 6px 10px; }
+.prep-diff { max-height: 320px; margin: 0; padding: 8px 10px; overflow: auto; border-radius: 6px; background: #07110e; font-size: 12px; line-height: 1.5; }
+.prep-diff span { display: block; white-space: pre; }
+.prep-diff .add { background: #12301f; color: #a8e6c2; }
+.prep-diff .del { background: #3a1814; color: #ffb4aa; }
+.prep-diff .fold { color: var(--ux-muted); }
+.prep-file { position: sticky; bottom: 0; z-index: 3; margin-top: 14px; box-shadow: 0 -8px 24px #0009; }
+.prep-file > header { display: flex; justify-content: space-between; gap: 12px; }
+.prep-file-body { display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: 10px; }
+.prep-file textarea { min-height: 46vh; padding: 8px 10px; color: var(--ux-text); background: #07110e; font: 12px/18px ui-monospace, Consolas, monospace; tab-size: 4; resize: vertical; }
+.prep-versions { display: grid; align-content: start; gap: 6px; max-height: 46vh; overflow: auto; }
+.prep-versions ol { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.prep-versions li { display: grid; gap: 2px; padding: 6px 8px; border: 1px solid var(--ux-line); border-radius: 6px; }
+.prep-versions li small { color: var(--ux-muted); }
+.prep-file footer { display: grid; gap: 8px; }
+@media (max-width: 1100px) {
+  .prep-step-row { grid-template-columns: 28px minmax(0, 1fr) auto; }
+  .prep-when, .prep-time { grid-column: 2; text-align: left; }
+  .prep-file-body { grid-template-columns: 1fr; }
+}
+
+/* the stand preparing itself, in a run and in its replay */
+.prep-progress { display: grid; gap: 4px; padding: 6px 8px; border: 1px solid #315147; border-radius: 6px; font-size: 12px; }
+.prep-progress .bar { height: 6px; overflow: hidden; border-radius: 3px; background: #24443a; }
+.prep-progress .bar i { display: block; height: 100%; background: #9ec9ff; }
+.prep-progress.failed .bar i { background: #ff8a7d; }
+.prep-progress small { color: #93a8a0; }

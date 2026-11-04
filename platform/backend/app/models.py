@@ -563,6 +563,18 @@ class LabE2eFrame(Base):
     size: Mapped[int] = mapped_column(Integer, default=0)
 
 
+class LabStandFileVersion(Base):
+    """A saved content of a test stand file (its preparation plan or a script) edited from Aftertime."""
+
+    __tablename__ = "lab_stand_file_versions"
+    id: Mapped[str] = mapped_column(String(80), primary_key=True, default=new_id)
+    path: Mapped[str] = mapped_column(String(400), index=True)
+    content: Mapped[str] = mapped_column(Text)
+    sha: Mapped[str] = mapped_column(String(64))
+    note: Mapped[str] = mapped_column(String(200), default="")
+    saved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
 class LabWorkflowDefinitionBackup(Base):
     __tablename__ = "lab_workflow_definition_backups"
     id: Mapped[str] = mapped_column(String(80), primary_key=True, default=new_id)

@@ -24,8 +24,8 @@ import { TestsView } from "./TestsView";
 import { ErrorBoundary } from "./ui";
 import { parseRoute, routeHash } from "./testsCatalog";
 
-type Mode = "model" | "process" | "events" | "participants" | "tests" | "results";
-const MODES: Mode[] = ["model", "process", "events", "participants", "tests", "results"];
+type Mode = "model" | "process" | "events" | "participants" | "tests" | "results" | "prep";
+const MODES: Mode[] = ["model", "process", "events", "participants", "tests", "results", "prep"];
 import {
   EVENT_ACTION_LABELS,
   actionTargetKind,
@@ -53,6 +53,7 @@ import {
 } from "./chartNavigation";
 import { DEFAULT_SCENARIO_ID, runModelVersionId, shouldAutoStartDefaultScenario } from "./startup";
 import { scenarioForModel, selectableModels } from "./modelNavigation";
+import { StandPrepView } from "./StandPrepView";
 import { timelineViewport, type TimelineScale } from "./timelineViewport";
 
 const palette: Record<string, string> = {
@@ -162,7 +163,7 @@ export default function App() {
     [siteSettings, setSiteSettings] = useState<Row | null>(null),
     [replayRequest, setReplayRequest] = useState<{ runId: string; nonce: number } | null>(null),
     [mode, setMode] = useState<Mode>(() => (MODES.includes(parseRoute(window.location.hash).section as Mode) ? parseRoute(window.location.hash).section as Mode : "model")),
-    [testId, setTestId] = useState<string | null>(() => parseRoute(window.location.hash).section === "tests" ? parseRoute(window.location.hash).id : null),
+    [testId, setTestId] = useState<string | null>(() => ["tests", "prep"].includes(parseRoute(window.location.hash).section) ? parseRoute(window.location.hash).id : null),
     [sectionTab, setSectionTab] = useState<string | null>(() => parseRoute(window.location.hash).tab),
     [viewVersion, setViewVersion] = useState<Row | null>(null),
     [graphRows, setGraphRows] = useState<Row[]>([]),
@@ -560,14 +561,14 @@ export default function App() {
       const route = parseRoute(window.location.hash);
       if (!MODES.includes(route.section as Mode)) return;
       setMode(route.section as Mode);
-      setTestId(route.section === "tests" ? route.id : null);
+      setTestId(route.section === "tests" || route.section === "prep" ? route.id : null);
       setSectionTab(route.tab);
     };
     window.addEventListener("hashchange", apply);
     return () => window.removeEventListener("hashchange", apply);
   }, []);
   useEffect(() => {
-    const hash = routeHash(mode, mode === "tests" ? testId : null, mode === "tests" || mode === "results" ? sectionTab : null);
+    const hash = routeHash(mode, mode === "tests" || mode === "prep" ? testId : null, mode === "tests" || mode === "results" ? sectionTab : null);
     if (window.location.hash !== hash) window.history.replaceState(null, "", hash);
   }, [mode, testId, sectionTab]);
   const go = (next: Mode, options: { id?: string | null; tab?: string | null } = {}) => {
@@ -584,7 +585,7 @@ export default function App() {
     setReplayRequest(replayRunId ? { runId: replayRunId, nonce: Date.now() } : null);
     go("process");
   };
-  const testing = mode === "tests" || mode === "results";
+  const testing = mode === "tests" || mode === "results" || mode === "prep";
   const fullPage = mode === "participants" || testing;
   const currentPack = selectablePacks(packs).find((pack) => pack.id === packId);
   const processOnly = !!currentPack && !hasSystemModel(currentPack);
@@ -609,7 +610,7 @@ export default function App() {
   if (!w)
     return <div className="loading">MODEL LAB · завантаження… {error}</div>;
   return (
-    <main className={`app-shell ${mode === "tests" || mode === "results" || processOnly ? "reports-shell" : ""}`}>
+    <main className={`app-shell ${testing || processOnly ? "reports-shell" : ""}`}>
       <header className="topbar">
         <div className="brand">
           <i />
@@ -621,7 +622,7 @@ export default function App() {
         <div className="title">
           <small>{testing ? "НАСКРІЗНЕ ТЕСТУВАННЯ" : "ВИКОНУВАНА МОДЕЛЬ · БЕЗ ТЕРИТОРІЙ"}</small>
           <b>
-            {mode === "tests" ? "Тести" : mode === "results" ? "Результати" : mode === "process"
+            {mode === "tests" ? "Тести" : mode === "results" ? "Результати" : mode === "prep" ? "Підготовка стенда" : mode === "process"
               ? workflow?.version?.name || "Process Designer"
               : mode === "participants"
                 ? assembly?.assembly?.name || "Учасники та процеси"
@@ -738,6 +739,13 @@ export default function App() {
           >
             Результати
           </button>
+          <button
+            className={mode === "prep" ? "active" : ""}
+            title="Що стенд робить перед тестами: кроки, їх порядок і файли"
+            onClick={() => go("prep", { id: testId })}
+          >
+            Підготовка
+          </button>
         </div>
         <div className="version" hidden={testing}>
           <span
@@ -772,7 +780,11 @@ export default function App() {
         </div>
       )}
       <section className={`workbench ${fullPage ? "participant-workbench" : ""} ${processOnly && mode === "process" ? "process-only" : ""}`}>
-        {mode === "tests" ? <ErrorBoundary key="tests"><TestsView
+        {mode === "prep" ? <ErrorBoundary key="prep"><StandPrepView
+          caseId={testId}
+          onCase={(id) => setTestId(id)}
+          onError={setError}
+        /></ErrorBoundary> : mode === "tests" ? <ErrorBoundary key="tests"><TestsView
           selectedId={testId}
           tab={sectionTab}
           onSelect={(id) => setTestId(id)}

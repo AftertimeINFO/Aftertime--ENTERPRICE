@@ -1,0 +1,6 @@
+{
+  "cases": [
+    { "id": "order-north", "title": "Order in the north region", "region": "north", "web": false },
+    { "id": "order-web", "title": "Order from the web shop", "region": "south", "web": true }
+  ]
+}

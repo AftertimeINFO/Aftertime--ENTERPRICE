@@ -1,0 +1,9 @@
+{
+  "plan": "suite/data/prep-plan.json",
+  "cases": "suite/data/cases.json",
+  "scripts": "suite",
+  "files": [
+    "suite/*.ps1",
+    "suite/lib/*.ps1"
+  ]
+}
