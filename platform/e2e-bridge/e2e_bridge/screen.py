@@ -1,8 +1,10 @@
 """Screen of the machine under test during a run, sent to Aftertime frame by frame.
 
-``SCREEN_COMMAND`` in ``bridge.env`` is a command that accepts ``-Action start|frame|stop``;
-``frame`` writes the latest JPEG to the path in ``BRIDGE_FRAME_OUT``.  How the screen is
-captured (inside a VM session, from a hypervisor, …) is the command's business.
+``SCREEN_COMMAND`` in ``bridge.env`` is a command that accepts ``-Action start|frame|stop|pack``;
+``frame`` writes the latest JPEG to ``BRIDGE_FRAME_OUT``; ``pack`` writes the whole recording — a zip
+of JPEG frames named by milliseconds since the recording started — to ``BRIDGE_RECORDING_OUT``.
+How the screen is captured (inside a VM session, from a hypervisor, …) is the command's business.
+Aftertime packs the recording into a video in the background.
 """
 
 from __future__ import annotations
@@ -16,6 +18,7 @@ from pathlib import Path
 from typing import Callable
 
 Send = Callable[[bytes, str], None]
+SendRecording = Callable[[Path, str], None]
 
 
 def _run(command: str, action: str, env: dict[str, str] | None = None, timeout: float = 60) -> bool:
@@ -30,12 +33,22 @@ def _run(command: str, action: str, env: dict[str, str] | None = None, timeout: 
 class ScreenRecorder:
     """Start capture, pull a frame every ``every`` seconds, stop on ``close``."""
 
-    def __init__(self, command: str, send: Send, every: float = 3, runner: Callable[..., bool] = _run) -> None:
+    def __init__(
+        self,
+        command: str,
+        send: Send,
+        every: float = 3,
+        runner: Callable[..., bool] = _run,
+        send_recording: SendRecording | None = None,
+    ) -> None:
         self.command = command
         self.send = send
+        self.send_recording = send_recording
+        self.started_at = ""
         self.every = every
         self.runner = runner
         self.frames = 0
+        self.recorded = False
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._file = Path(tempfile.gettempdir()) / f"aftertime-frame-{os.getpid()}-{id(self)}.jpg"
@@ -43,6 +56,8 @@ class ScreenRecorder:
     def start(self) -> None:
         if not self.runner(self.command, "start"):
             return
+        # The recording's own clock starts now; frames are offsets from this host time.
+        self.started_at = datetime.now(timezone.utc).isoformat()
         self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
 
@@ -69,3 +84,14 @@ class ScreenRecorder:
         self.grab()
         self.runner(self.command, "stop")
         self._file.unlink(missing_ok=True)
+        if self.send_recording:
+            archive = self._file.with_suffix(".zip")
+            archive.unlink(missing_ok=True)
+            if self.runner(self.command, "pack", {"BRIDGE_RECORDING_OUT": str(archive)}, timeout=600) and archive.exists():
+                try:
+                    self.send_recording(archive, self.started_at)
+                    self.recorded = True
+                except OSError:
+                    pass
+                finally:
+                    archive.unlink(missing_ok=True)

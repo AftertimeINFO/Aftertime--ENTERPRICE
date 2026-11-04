@@ -154,6 +154,7 @@ export default function App() {
     [packs, setPacks] = useState<Row[]>([]),
     [packId, setPackId] = useState<string>(() => readStoredPack() ?? ""),
     [siteSettings, setSiteSettings] = useState<Row | null>(null),
+    [replayRequest, setReplayRequest] = useState<{ runId: string; nonce: number } | null>(null),
     [mode, setMode] = useState<"model" | "process" | "events" | "participants" | "reports">("model"),
     [viewVersion, setViewVersion] = useState<Row | null>(null),
     [graphRows, setGraphRows] = useState<Row[]>([]),
@@ -728,12 +729,13 @@ export default function App() {
         {mode === "reports" ? <ReportsView
           initialLaunchId={reportLaunchId}
           onError={setError}
-          onOpenProcess={async (binding) => {
+          onOpenProcess={async (binding, replayRunId) => {
             const target = processCatalog(w?.workflows || []).find((item) =>
               item.bpmn_xml?.includes(`aftertime:testBinding="${binding}"`));
             if (!target) { setError(`Процес із прив'язкою «${binding}» не знайдено`); return; }
-            setWorkflow(await api.workflow(target.id));
+            if (workflow?.version?.id !== target.id) setWorkflow(await api.workflow(target.id));
             setValidation(null);
+            setReplayRequest(replayRunId ? { runId: replayRunId, nonce: Date.now() } : null);
             setMode("process");
           }}
         /> : mode === "participants" ? <ParticipantProcessTable
@@ -855,6 +857,7 @@ export default function App() {
               setReportLaunchId(launchId);
               setMode("reports");
             }}
+            replayRequest={replayRequest}
           /> : <ReactFlow
             onInit={setFlow}
             nodes={nodes}

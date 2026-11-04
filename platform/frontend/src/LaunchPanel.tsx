@@ -8,10 +8,12 @@ import { launchTitle, needsSummary, progressView } from "./launch";
 type Props = {
   onOpenLaunch: (launchId: string) => void;
   onError: (message: string) => void;
+  /** Replay a finished run of a BPMN process on the process itself. */
+  onReplayProcess?: (binding: string, runId: string) => void;
 };
 
 /** Launches suites, groups or cases of the E2E control center from Aftertime and follows them. */
-export function LaunchPanel({ onOpenLaunch, onError }: Props) {
+export function LaunchPanel({ onOpenLaunch, onError, onReplayProcess }: Props) {
   const [center, setCenter] = useState<Row | null>(null);
   const [runs, setRuns] = useState<Row[]>([]);
   const [current, setCurrent] = useState<Row | null>(null);
@@ -21,12 +23,16 @@ export function LaunchPanel({ onOpenLaunch, onError }: Props) {
   const [stopOnFailure, setStopOnFailure] = useState(false);
   const next = useRef(0);
   const currentId = useRef<string | null>(null);
+  // A finished run picked for replay; otherwise the active (or latest) run is shown.
+  const [viewId, setViewId] = useState<string | null>(null);
+  const viewRef = useRef<string | null>(null);
+  viewRef.current = viewId;
 
   const refresh = useCallback(async () => {
     const [state, list] = await Promise.all([api.centerState(), api.centerRuns()]);
     setCenter(state);
     setRuns(list);
-    const active = list.find(isActive) || list[0];
+    const active = list.find((item) => item.id === viewRef.current) || list.find(isActive) || list[0];
     if (!active) return;
     if (active.id !== currentId.current) {
       currentId.current = active.id;
@@ -38,6 +44,7 @@ export function LaunchPanel({ onOpenLaunch, onError }: Props) {
     setCurrent(detail);
     if (detail.lines.length) setLines((old) => [...old, ...detail.lines].slice(-400));
   }, []);
+  useEffect(() => { refresh().catch(() => {}); }, [viewId, refresh]);
 
   useEffect(() => {
     let alive = true;
@@ -101,7 +108,8 @@ export function LaunchPanel({ onOpenLaunch, onError }: Props) {
           <ol className="launch-suites">{(current.progress?.suites || []).map((suite: Row) =>
             <li key={suite.id} className={suite.state}>{suite.title} <small>{suite.state}</small></li>)}</ol>
         </>}
-        <VmScreen runId={current.id} active={isActive(current)} />
+        {viewId && <button className="link" onClick={() => setViewId(null)}>← до поточного запуску</button>}
+        <VmScreen runId={current.id} active={isActive(current)} autoplay={!!viewId} recording={current.recording} />
         {lines.length > 0 && <pre className="e2e-log">{lines.slice(-60).join("\n")}</pre>}
         {!!current.report_launch_ids?.length && <div className="links">{current.report_launch_ids.map((id: string) =>
           <button key={id} className="link" onClick={() => onOpenLaunch(id)}>Звіт запуску</button>)}</div>}
@@ -147,6 +155,10 @@ export function LaunchPanel({ onOpenLaunch, onError }: Props) {
         <td>{new Date(run.created_at).toLocaleString("uk-UA")}</td>
         <td>{launchTitle(run)}</td>
         <td className={`e2e-status ${run.status}`}>{runStatusLabel(run)}</td>
+        <td>{!isActive(run) && <button title="Програти виконаний тест" onClick={() => {
+          if (run.kind === "binding" && run.binding && onReplayProcess) onReplayProcess(run.binding, run.id);
+          else setViewId(run.id);
+        }}>▶ Програти</button>}</td>
       </tr>)}</tbody></table>
       {!!data.history?.length && <>
         <h3>Історія центру E2E</h3>

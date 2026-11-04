@@ -46,6 +46,15 @@ class Aftertime:
         with urllib.request.urlopen(request, timeout=self.timeout) as response:
             response.read()
 
+    def recording(self, run_id: str, archive: Any, started_at: str) -> None:
+        """Upload the zip of screen frames of a run; Aftertime packs it into a video."""
+        request = urllib.request.Request(
+            f"{self.url}/lab/e2e-runs/{run_id}/recording", method="POST", data=archive.read_bytes(),
+            headers={"Content-Type": "application/zip", "X-Recording-Started-At": started_at},
+        )
+        with urllib.request.urlopen(request, timeout=600) as response:
+            response.read()
+
     def report(self, run_id: str, events: list[dict[str, Any]]) -> dict[str, Any]:
         return self._call("POST", f"/lab/e2e-runs/{run_id}/events", {"events": events})
 
@@ -134,8 +143,12 @@ def execute(
     should_stop = lambda: sink.stop_requested  # noqa: E731
     started = datetime.now()
     # The screen is recorded for simulations too: the phases are timed, the screen is real.
-    screen = ScreenRecorder(settings.screen_command, lambda jpeg, at: sink.aftertime.frame(run["id"], jpeg, at),
-                            settings.screen_seconds) if settings.screen_command else None
+    screen = ScreenRecorder(
+        settings.screen_command,
+        lambda jpeg, at: sink.aftertime.frame(run["id"], jpeg, at),
+        settings.screen_seconds,
+        send_recording=lambda archive, started: sink.aftertime.recording(run["id"], archive, started),
+    ) if settings.screen_command else None
     if screen:
         screen.start()
     if simulation is not None:
@@ -158,7 +171,8 @@ def execute(
     finally:
         if screen:
             screen.close()
-            sink({"type": "log", "line": f"Aftertime: кадрів екрана передано: {screen.frames}"})
+            sink({"type": "log", "line": f"Aftertime: живих кадрів екрана {screen.frames}; запис для відео "
+                                         f"{'передано, пакується у фоні' if screen.recorded else 'не отримано'}"})
     import_report(settings, binding, run["id"], started, sink, every_launch=run.get("kind") == "center")
 
 

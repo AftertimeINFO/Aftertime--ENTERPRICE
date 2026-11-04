@@ -133,3 +133,63 @@ async def test_frames_record_the_running_phase_and_skip_identical_screens(publis
         with pytest.raises(HTTPException):
             await add_frame(run["id"], Body(b"not a jpeg", "2026-11-04T10:00:09+00:00"), db)
         stop_e2e_run(run["id"], db)
+
+
+def test_timeline_records_each_phase_change_once(published):
+    with SessionLocal() as db:
+        run = start_e2e_run(published, db)
+        e2e_run_events(run["id"], {"events": [
+            {"type": "status", "status": "running"},
+            {"type": "phase", "phase": "order", "state": "active"},
+            {"type": "phase", "phase": "order", "state": "active"},
+            {"type": "phase", "phase": "order", "state": "passed"},
+            {"type": "finished", "status": "failed", "states": [
+                {"phase": "order", "state": "passed"}, {"phase": "issue", "state": "failed"}]},
+        ]}, db)
+        timeline = e2e_run(run["id"], 0, db)["timeline"]
+        assert [item.get("status") or f"{item['phase']}={item['state']}" for item in timeline] == [
+            "running", "order=active", "order=passed", "issue=failed",
+        ]
+        assert all(item["t"] for item in timeline)
+
+
+@pytest.mark.anyio
+async def test_recording_is_packed_and_live_frames_reduced_to_one_per_phase(published, tmp_path, monkeypatch):
+    from app.api.e2e import add_frame, add_recording, frames, pack_recording
+    from app.services.recordings import video_path
+    from tests.test_recordings import jpeg, recording_zip
+
+    monkeypatch.setenv("REPORTS_DIR", str(tmp_path))
+
+    class Body:
+        def __init__(self, data, headers):
+            self.data, self.headers = data, headers
+
+        async def body(self):
+            return self.data
+
+    class Background:
+        def __init__(self):
+            self.tasks = []
+
+        def add_task(self, func, *args):
+            self.tasks.append((func, args))
+
+    with SessionLocal() as db:
+        run = start_e2e_run(published, db)
+        e2e_run_events(run["id"], {"events": [{"type": "phase", "phase": "order", "state": "active"}]}, db)
+        for second, colour in enumerate(["red", "blue", "green"]):
+            await add_frame(run["id"], Body(jpeg(colour), {"x-captured-at": f"2026-11-04T10:00:0{second}+00:00"}), db)
+        background = Background()
+        reply = await add_recording(run["id"], Body(recording_zip([0, 1000, 2000]),
+                                                    {"x-recording-started-at": "2026-11-04T10:00:00+00:00"}), background, db)
+        assert reply["status"] == "packing" and background.tasks[0][0] is pack_recording
+        pack_recording(run["id"])
+        detail = e2e_run(run["id"], 0, db)
+        db.expire_all()
+        detail = e2e_run(run["id"], 0, db)
+        assert detail["recording"]["status"] == "ready"
+        assert detail["recording"]["started_at"] == "2026-11-04T10:00:00+00:00"
+        assert video_path(run["id"]).exists()
+        assert len(frames(run["id"], db)) == 1  # one picture of the phase stays
+        stop_e2e_run(run["id"], db)

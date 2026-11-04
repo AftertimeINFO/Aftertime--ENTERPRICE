@@ -1781,3 +1781,16 @@ pre {
 /* While the screen is shown the diagram needs all its room; the process overview returns after. */
 .native-bpmn-editor.with-screen .bpmn-properties.process-overview { display: none; }
 .bpmn-screen-pane button.link { justify-self: start; padding: 0; border: 0; background: none; color: #9ec9ff; cursor: pointer; font-size: 11px; }
+
+/* Replaying a finished run */
+.replay-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px; border: 1px solid #4f8fd6; border-radius: 4px; background: #0e2236; }
+.replay-controls button { min-width: 28px; padding: 2px 6px; }
+.replay-controls input[type=range] { flex: 1 1 140px; }
+.replay-controls span { color: #9ec9ff; font-variant-numeric: tabular-nums; font-size: 10px; }
+.e2e-runs { display: grid; gap: 3px; max-height: 150px; margin: 0; padding: 0; overflow: auto; list-style: none; font-size: 10px; }
+.e2e-runs li { display: flex; align-items: center; gap: 8px; padding: 2px 4px; border-radius: 3px; }
+.e2e-runs li.selected { background: #64d8cb1a; }
+.e2e-runs li .e2e-status { flex: 1; }
+.e2e-runs li > button:last-child { padding: 1px 6px; font-size: 10px; }
+.launch-history td button { padding: 1px 6px; font-size: 10px; }
+.vm-screen video { display: block; width: 100%; border: 1px solid var(--line); border-radius: 3px; background: #000; }
