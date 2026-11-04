@@ -193,3 +193,5 @@
 .e2e-report-results summary { cursor: pointer; color: #9fb3ab; font-size: 11px; }
 .report-view-note { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; padding: 4px 6px; border-left: 2px solid #64d8cb; font-size: 11px; color: #cfe0d8; }
 .report-view-note span { flex: 1 1 200px; }
+/* The run being followed takes the whole width: its windows need the room */
+.launch > .launch-current { grid-column: 1 / -1; }

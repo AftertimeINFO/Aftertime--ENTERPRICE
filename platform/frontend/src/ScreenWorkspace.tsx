@@ -15,6 +15,10 @@ type Props = {
   focusPhase?: string | null;
   at?: number | null;
   onClose?: () => void;
+  /** Which work area this is; each remembers its own layout. */
+  place?: string;
+  /** How windows are laid out until a person arranges them. */
+  initial?: Arrangement;
 };
 
 const ARRANGEMENTS: { id: Arrangement; label: string; hint: string }[] = [
@@ -31,12 +35,12 @@ const KEY_HINT = "Перетягніть заголовок, щоб перемі
  * windows over the diagram: each can be brought to front, moved, resized, maximized, put aside to
  * the dock and zoomed. The layout is remembered in this browser.
  */
-export function ScreenWorkspace({ runId, active, streams, focusPhase, at, onClose }: Props) {
+export function ScreenWorkspace({ runId, active, streams, focusPhase, at, onClose, place = "process", initial = "column" }: Props) {
   const area = useRef<HTMLDivElement | null>(null);
   const ids = useMemo(() => streams.map((stream) => stream.id), [streams]);
-  const [layout, setLayout] = useState<Layout>(() => withWindows(loadLayout(), ids));
-  useEffect(() => setLayout((current) => withWindows(current, ids)), [ids]);
-  useEffect(() => saveLayout(layout), [layout]);
+  const [layout, setLayout] = useState<Layout>(() => withWindows(loadLayout(place), ids, initial));
+  useEffect(() => setLayout((current) => withWindows(current, ids, initial)), [ids, initial]);
+  useEffect(() => saveLayout(layout, place), [layout, place]);
   const drag = useRef<{ id: string; mode: "move" | "resize"; x: number; y: number } | null>(null);
   const front = ids.reduce<string | null>((best, id) => {
     const win = layout[id];

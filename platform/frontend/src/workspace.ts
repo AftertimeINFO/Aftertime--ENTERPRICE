@@ -126,9 +126,10 @@ export function frameOf(win: Win): { left: string; top: string; width: string; h
 
 const STORAGE_KEY = "aftertime.workspace.v1";
 
-export function loadLayout(): Layout {
+/** ``place`` tells apart work areas (the process field, the launches page): each remembers its own layout. */
+export function loadLayout(place = "process"): Layout {
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = window.localStorage.getItem(`${STORAGE_KEY}.${place}`);
     const data = raw ? JSON.parse(raw) : {};
     const layout: Layout = {};
     for (const [id, win] of Object.entries<Partial<Win>>(data && typeof data === "object" ? data : {})) {
@@ -142,9 +143,9 @@ export function loadLayout(): Layout {
   }
 }
 
-export function saveLayout(layout: Layout): void {
+export function saveLayout(layout: Layout, place = "process"): void {
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(layout));
+    window.localStorage.setItem(`${STORAGE_KEY}.${place}`, JSON.stringify(layout));
   } catch {
     /* private mode or storage blocked: the layout simply is not remembered */
   }

@@ -146,7 +146,7 @@ export function LaunchPanel({ onOpenLaunch, onError, onReplayProcess }: Props) {
           {replayT != null && <button title="Вийти з відтворення" onClick={() => { setReplayT(null); setPlaying(false); }}>✕</button>}
         </div>}
         <div className="launch-screens">
-          <ScreenWorkspace runId={current.id} active={isActive(current)} streams={streamsOf(current)} at={replayT} />
+          <ScreenWorkspace runId={current.id} active={isActive(current)} streams={streamsOf(current)} at={replayT} place="launches" initial="tile" />
         </div>
         {lines.length > 0 && <pre className="e2e-log">{lines.slice(-60).join("\n")}</pre>}
         {!!current.report_launch_ids?.length && <div className="links">{current.report_launch_ids.map((id: string) =>
