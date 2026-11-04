@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from app.db import SessionLocal, get_db
 from app.models import CenterSnapshot, LabE2eFrame, LabE2eRun, LabWorkflowVersion, ReportLaunch
 from app.services.recordings import archive_path, pack, video_path
+from app.services.tests_catalog import sync_catalog
 from app.services.reports import reports_dir
 from app.services.test_bindings import load_bindings, phase_coverage
 
@@ -134,7 +135,9 @@ def push_center_state(body: dict[str, Any], db: Session = Depends(get_db)) -> di
     snapshot.received_at = datetime.now(UTC)
     db.add(snapshot)
     db.commit()
-    return {"ok": True}
+    # The catalog of the suite lives in Aftertime: tests stay browsable with the bridge offline.
+    synced = sync_catalog(db, body.get("catalog") or {})
+    return {"ok": True, "tests": synced}
 
 
 @router.get("/center/state")

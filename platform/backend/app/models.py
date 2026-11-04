@@ -499,6 +499,20 @@ class ReportArchivedTest(Base):
     archived_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class LabTest(Base):
+    """An end-to-end test case of the test suite, kept in Aftertime from the control center catalog."""
+
+    __tablename__ = "lab_tests"
+    id: Mapped[str] = mapped_column(String(200), primary_key=True)
+    title: Mapped[str] = mapped_column(Text, default="")
+    suites: Mapped[list] = mapped_column(JSONB, default=list)
+    feature: Mapped[str | None] = mapped_column(Text)
+    number: Mapped[int | None] = mapped_column(Integer)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    first_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class CenterSnapshot(Base):
     """Latest state of the external E2E control center, pushed by the bridge."""
 

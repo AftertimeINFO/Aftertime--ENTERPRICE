@@ -177,7 +177,7 @@ function Categories({ overview, results, selected, onSelect, selectedId, onSelec
   </ul>;
 }
 
-function TestDetail({ id, onSelect, onOpenProcess, onError, onArchived }: {
+export function TestDetail({ id, onSelect, onOpenProcess, onError, onArchived }: {
   id: string; onSelect: (id: string) => void; onOpenProcess: (binding: string) => void; onError: (message: string) => void; onArchived: () => void;
 }) {
   const [test, setTest] = useState<Row | null>(null);

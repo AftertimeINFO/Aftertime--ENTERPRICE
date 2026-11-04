@@ -19,7 +19,13 @@ import { api, type PortContract, type Row, type Workspace } from "./api";
 import { BpmnCollaboration, BpmnEditor } from "./BpmnEditor";
 import { processCatalog } from "./testBindings";
 import { defaultProcess, hasSystemModel, inPack, readStoredPack, selectablePacks, storePack } from "./packs";
-import { ReportsView } from "./ReportsView";
+import { ResultsView } from "./ResultsView";
+import { TestsView } from "./TestsView";
+import { ErrorBoundary } from "./ui";
+import { parseRoute, routeHash } from "./testsCatalog";
+
+type Mode = "model" | "process" | "events" | "participants" | "tests" | "results";
+const MODES: Mode[] = ["model", "process", "events", "participants", "tests", "results"];
 import {
   EVENT_ACTION_LABELS,
   actionTargetKind,
@@ -155,7 +161,9 @@ export default function App() {
     [packId, setPackId] = useState<string>(() => readStoredPack() ?? ""),
     [siteSettings, setSiteSettings] = useState<Row | null>(null),
     [replayRequest, setReplayRequest] = useState<{ runId: string; nonce: number } | null>(null),
-    [mode, setMode] = useState<"model" | "process" | "events" | "participants" | "reports">("model"),
+    [mode, setMode] = useState<Mode>(() => (MODES.includes(parseRoute(window.location.hash).section as Mode) ? parseRoute(window.location.hash).section as Mode : "model")),
+    [testId, setTestId] = useState<string | null>(() => parseRoute(window.location.hash).section === "tests" ? parseRoute(window.location.hash).id : null),
+    [sectionTab, setSectionTab] = useState<string | null>(() => parseRoute(window.location.hash).tab),
     [viewVersion, setViewVersion] = useState<Row | null>(null),
     [graphRows, setGraphRows] = useState<Row[]>([]),
     [edgeRows, setEdgeRows] = useState<Row[]>([]),
@@ -547,6 +555,37 @@ export default function App() {
       document.querySelector(".canvas")?.scrollIntoView({ behavior: "smooth", block: "center" });
     }, 0);
   }, [flow, graphRows]);
+  useEffect(() => {
+    const apply = () => {
+      const route = parseRoute(window.location.hash);
+      if (!MODES.includes(route.section as Mode)) return;
+      setMode(route.section as Mode);
+      setTestId(route.section === "tests" ? route.id : null);
+      setSectionTab(route.tab);
+    };
+    window.addEventListener("hashchange", apply);
+    return () => window.removeEventListener("hashchange", apply);
+  }, []);
+  useEffect(() => {
+    const hash = routeHash(mode, mode === "tests" ? testId : null, mode === "tests" || mode === "results" ? sectionTab : null);
+    if (window.location.hash !== hash) window.history.replaceState(null, "", hash);
+  }, [mode, testId, sectionTab]);
+  const go = (next: Mode, options: { id?: string | null; tab?: string | null } = {}) => {
+    setMode(next);
+    setTestId(options.id ?? null);
+    setSectionTab(options.tab ?? null);
+  };
+  const openProcess = async (binding: string, replayRunId?: string) => {
+    const target = processCatalog(w?.workflows || []).find((item) =>
+      item.bpmn_xml?.includes(`aftertime:testBinding="${binding}"`));
+    if (!target) { setError(`Процес із прив'язкою «${binding}» не знайдено`); return; }
+    if (workflow?.version?.id !== target.id) setWorkflow(await api.workflow(target.id));
+    setValidation(null);
+    setReplayRequest(replayRunId ? { runId: replayRunId, nonce: Date.now() } : null);
+    go("process");
+  };
+  const testing = mode === "tests" || mode === "results";
+  const fullPage = mode === "participants" || testing;
   const currentPack = selectablePacks(packs).find((pack) => pack.id === packId);
   const processOnly = !!currentPack && !hasSystemModel(currentPack);
   useEffect(() => {
@@ -570,7 +609,7 @@ export default function App() {
   if (!w)
     return <div className="loading">MODEL LAB · завантаження… {error}</div>;
   return (
-    <main className={`app-shell ${mode === "reports" || processOnly ? "reports-shell" : ""}`}>
+    <main className={`app-shell ${mode === "tests" || mode === "results" || processOnly ? "reports-shell" : ""}`}>
       <header className="topbar">
         <div className="brand">
           <i />
@@ -580,9 +619,9 @@ export default function App() {
           </span>
         </div>
         <div className="title">
-          <small>ВИКОНУВАНА МОДЕЛЬ · БЕЗ ТЕРИТОРІЙ</small>
+          <small>{testing ? "НАСКРІЗНЕ ТЕСТУВАННЯ" : "ВИКОНУВАНА МОДЕЛЬ · БЕЗ ТЕРИТОРІЙ"}</small>
           <b>
-            {mode === "process"
+            {mode === "tests" ? "Тести" : mode === "results" ? "Результати" : mode === "process"
               ? workflow?.version?.name || "Process Designer"
               : mode === "participants"
                 ? assembly?.assembly?.name || "Учасники та процеси"
@@ -597,16 +636,17 @@ export default function App() {
             setPackId(event.target.value);
             storePack(event.target.value);
             setWorkflow(null);
-            if (!hasSystemModel(next)) setMode("process");
+            if (!hasSystemModel(next) && !testing) setMode("process");
             else if (next && !next.projects.includes(w.project.id)) setProjectId(next.projects[0]);
           }}>
             <option value="">Усі моделі</option>
             {selectablePacks(packs).map((pack) => <option value={pack.id} key={pack.id}>{pack.title}</option>)}
           </select>
-          {hasSystemModel(currentPack) && <select aria-label="Проєкт" value={w.project.id} onChange={(event) => { setProjectId(event.target.value); setSelectedId(null); setSelectedEdgeId(null); }}>
+          {hasSystemModel(currentPack) && !testing && <select aria-label="Проєкт" value={w.project.id} onChange={(event) => { setProjectId(event.target.value); setSelectedId(null); setSelectedEdgeId(null); }}>
             {inPack(w.projects || [w.project], currentPack, "projects", (project: Row) => project.id).map((project: Row) => <option value={project.id} key={project.id}>{project.name}</option>)}
           </select>}
-          <select aria-label="Модель" value={viewVersion?.id || w.version.id} onChange={async (event) => {
+          {/* The system model controls belong to the model views only. */}
+          {hasSystemModel(currentPack) && !testing && <><select aria-label="Модель" value={viewVersion?.id || w.version.id} onChange={async (event) => {
             const modelVersionId = event.target.value;
             const linkedScenario = scenarioForModel(w.scenarios, modelVersionId);
             setRun(null);
@@ -637,7 +677,7 @@ export default function App() {
             if (!name) return;
             const created = await api.createProject({ name, version_name: name, pack_id: currentPack?.id });
             setProjectId(created.project.id);
-          }}>＋ Нова модель</button>
+          }}>＋ Нова модель</button></>}
         </div>
         <div className="mode-switch">
           <button
@@ -684,16 +724,22 @@ export default function App() {
             Учасники та процеси
           </button>
           <button
-            className={mode === "reports" ? "active" : ""}
+            className={mode === "tests" ? "active" : ""}
+            onClick={() => go("tests")}
+          >
+            Тести
+          </button>
+          <button
+            className={mode === "results" ? "active" : ""}
             onClick={() => {
               setReportLaunchId(null);
-              setMode("reports");
+              go("results");
             }}
           >
-            Звіти
+            Результати
           </button>
         </div>
-        <div className="version">
+        <div className="version" hidden={testing}>
           <span
             className={
               mode === "process"
@@ -725,20 +771,23 @@ export default function App() {
           <button onClick={() => setError("")}>×</button>
         </div>
       )}
-      <section className={`workbench ${mode === "participants" || mode === "reports" ? "participant-workbench" : ""} ${processOnly && mode === "process" ? "process-only" : ""}`}>
-        {mode === "reports" ? <ReportsView
-          initialLaunchId={reportLaunchId}
+      <section className={`workbench ${fullPage ? "participant-workbench" : ""} ${processOnly && mode === "process" ? "process-only" : ""}`}>
+        {mode === "tests" ? <ErrorBoundary key="tests"><TestsView
+          selectedId={testId}
+          tab={sectionTab}
+          onSelect={(id) => setTestId(id)}
+          onTab={(tab) => setSectionTab(tab)}
+          onOpenProcess={openProcess}
+          onOpenLaunch={(launchId) => { setReportLaunchId(launchId); go("results", { tab: "reports" }); }}
           onError={setError}
-          onOpenProcess={async (binding, replayRunId) => {
-            const target = processCatalog(w?.workflows || []).find((item) =>
-              item.bpmn_xml?.includes(`aftertime:testBinding="${binding}"`));
-            if (!target) { setError(`Процес із прив'язкою «${binding}» не знайдено`); return; }
-            if (workflow?.version?.id !== target.id) setWorkflow(await api.workflow(target.id));
-            setValidation(null);
-            setReplayRequest(replayRunId ? { runId: replayRunId, nonce: Date.now() } : null);
-            setMode("process");
-          }}
-        /> : mode === "participants" ? <ParticipantProcessTable
+        /></ErrorBoundary> : mode === "results" ? <ErrorBoundary key="results"><ResultsView
+          tab={sectionTab}
+          onTab={(tab) => setSectionTab(tab)}
+          onOpenTest={(id) => go("tests", { id })}
+          reportLaunchId={reportLaunchId}
+          onOpenProcess={openProcess}
+          onError={setError}
+        /></ErrorBoundary> : mode === "participants" ? <ParticipantProcessTable
           data={assembly}
           onOpenWorkflow={async (versionId) => {
             setWorkflow(await api.workflow(versionId));
@@ -855,7 +904,7 @@ export default function App() {
             onError={setError}
             onOpenReport={(launchId) => {
               setReportLaunchId(launchId);
-              setMode("reports");
+              go("results", { tab: "reports" });
             }}
             replayRequest={replayRequest}
           /> : <ReactFlow
@@ -979,7 +1028,7 @@ export default function App() {
         />}
         </>}
       </section>
-      {mode !== "reports" && !processOnly && <Monitor
+      {mode !== "tests" && mode !== "results" && !processOnly && <Monitor
         w={{ ...w, observables }}
         graphRows={graphRows}
         run={run}
