@@ -36,7 +36,7 @@ describe("the test suite", () => {
   });
 
   it("keeps the view in the address", () => {
-    expect(parseRoute("#/tests/chain-c-solo-card-30min")).toEqual({ section: "tests", id: "chain-c-solo-card-30min", tab: null });
+    expect(parseRoute("#/tests/order-issue-case")).toEqual({ section: "tests", id: "order-issue-case", tab: null });
     expect(parseRoute("#/results/matrix")).toEqual({ section: "results", id: null, tab: "matrix" });
     expect(parseRoute("")).toEqual({ section: "", id: null, tab: null });
     expect(routeHash("tests", "a b")).toBe("#/tests/a%20b");
