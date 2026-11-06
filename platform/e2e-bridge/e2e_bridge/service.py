@@ -3,17 +3,18 @@
 from __future__ import annotations
 
 import json
+import re
 import threading
 import time
 import urllib.parse
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Callable
 
 from e2e_bridge.center import Center, CenterError
-from e2e_bridge.phases import PASSED, Proof, changes, phase_states
+from e2e_bridge.phases import PASSED, Proof, changes, phase_states, read_proofs
 from e2e_bridge.results import Uploader, launches_since, newest_launch_for
-from e2e_bridge.runner import MAIN_SCREEN, Binding, Screen, Settings, follow
+from e2e_bridge.runner import MAIN_SCREEN, Binding, Screen, Settings, follow, live_entries
 from e2e_bridge.screen import ScreenRecorder
 
 
@@ -59,6 +60,10 @@ class Aftertime:
 
     def report(self, run_id: str, events: list[dict[str, Any]]) -> dict[str, Any]:
         return self._call("POST", f"/lab/e2e-runs/{run_id}/events", {"events": events})
+
+    def start_case(self, run_id: str, case: str, binding: str) -> dict[str, Any]:
+        """A test of the suite run ``run_id`` begins: Aftertime opens a run of its bound process."""
+        return self._call("POST", f"/lab/e2e-runs/{run_id}/cases", {"case": case, "binding": binding})
 
 
 def _stream_headers(stream: str, title: str) -> dict[str, str]:
@@ -133,18 +138,26 @@ def simulate(
 
 
 class Screens:
-    """Every window of the settings recorded side by side; closing packs them all at once."""
+    """The windows of a test recorded side by side; closing packs them all at once.
 
-    def __init__(self, settings: Settings, sink: AftertimeSink, run_id: str) -> None:
+    ``only``: window ids the test is set to record (``runner.screens`` of its binding); None records them all.
+    """
+
+    def __init__(self, settings: Settings, sink: AftertimeSink, run_id: str, only: list[str] | None = None,
+                 case: str = "") -> None:
         self.sink = sink
         screens = settings.screens or ([Screen(MAIN_SCREEN, "", settings.screen_command, settings.screen_seconds)]
                                        if settings.screen_command else [])
+        if only is not None:
+            screens = [screen for screen in screens if screen.id in only]
+        env = {"BRIDGE_RECORDING_ID": run_id, **({"BRIDGE_CASE": case} if case else {})}
         self.recorders = [(screen, ScreenRecorder(
             screen.command,
             lambda jpeg, at, screen=screen: sink.aftertime.frame(run_id, jpeg, at, screen.id, screen.title),
             screen.seconds,
             send_recording=lambda archive, started, screen=screen: sink.aftertime.recording(
                 run_id, archive, started, screen.id, screen.title),
+            env=env,
         )) for screen in screens]
 
     def start(self) -> None:
@@ -162,6 +175,119 @@ class Screens:
                 self.sink({"type": "log", "line": f"Aftertime: вікно «{screen.title or screen.id}» — живих кадрів "
                                                   f"{recorder.frames}; запис для відео "
                                                   f"{'передано, пакується у фоні' if recorder.recorded else 'не отримано'}"})
+
+
+CASE_LINE = re.compile(r"CASE\|(start|end)\|([A-Za-z0-9][\w.-]*)(?:\|(\w+))?")
+CASE_OUTCOMES = {"passed": "passed", "failed": "failed", "skipped": "stopped", "timedOut": "failed", "interrupted": "stopped"}
+
+
+def screens_of(binding: Binding) -> list[str] | None:
+    """Windows a test records (``runner.screens`` of its binding); None: every window of the settings."""
+    value = binding.extra.get("screens")
+    return [str(item) for item in value] if isinstance(value, list) else None
+
+
+class CaseRuns:
+    """Each test of a suite run as its own Aftertime run, from the moment the stand says it begins.
+
+    The stand prints ``CASE|start|<case>`` and ``CASE|end|<case>|<status>``; for the test between them
+    the bridge keeps a run of its bound process with its own recording of the windows set for the test,
+    its log and its phases (live proofs while it runs, the report afterwards).
+    """
+
+    def __init__(self, aftertime: Aftertime, parent_id: str, bindings: dict[str, Binding], settings: Settings,
+                 echo: Callable[[dict], None] | None = None) -> None:
+        self.aftertime = aftertime
+        self.parent_id = parent_id
+        self.settings = settings
+        self.echo = echo
+        # a test belongs to the binding made for it alone, else to the first binding that lists it
+        self.by_case: dict[str, Binding] = {}
+        for binding in sorted(bindings.values(), key=lambda item: len(item.cases)):
+            for case in binding.cases:
+                self.by_case.setdefault(case, binding)
+        self.current: dict[str, Any] | None = None
+        self.closing: list[threading.Thread] = []
+
+    def line(self, line: str) -> None:
+        match = CASE_LINE.search(line)
+        if self.current and not (match and match.group(1) == "start"):
+            self.current["sink"]({"type": "log", "line": line})
+        if not match:
+            return
+        state, case, status = match.groups()
+        if state == "start":
+            self.finish("stopped")  # a test that never said it ended
+            self.begin(case)
+            if self.current:
+                self.current["sink"]({"type": "log", "line": line})
+        elif self.current and self.current["case"] == case:
+            self.finish(CASE_OUTCOMES.get(status or "", "failed"))
+
+    def begin(self, case: str) -> None:
+        binding = self.by_case.get(case)
+        if binding is None:
+            return
+        try:
+            child = self.aftertime.start_case(self.parent_id, case, binding.id)
+        except OSError as exc:
+            if self.echo:
+                self.echo({"type": "error", "message": f"Прогін тесту {case} не створено: {exc}"})
+            return
+        sink = AftertimeSink(self.aftertime, child["id"], self.echo)
+        screens = Screens(self.settings, sink, child["id"], screens_of(binding), case)
+        screens.start()
+        use_live = binding.live and bool(self.settings.live_command)
+        since = datetime.now(timezone.utc)
+        self.current = {
+            "case": case, "binding": binding, "sink": sink, "screens": screens, "since": since, "proofs": {},
+            "use_live": use_live, "next_live": 0.0, "states": phase_states(binding.phases, {}, None),
+            "baseline": {name for name, _ in live_entries(self.settings.live_command, since)} if use_live else set(),
+        }
+        sink({"type": "states", "states": self.current["states"]})
+
+    def tick(self) -> None:
+        """Live proofs of the running test, at most every ``live_seconds``."""
+        current = self.current
+        if not current or not current["use_live"] or time.monotonic() < current["next_live"]:
+            return
+        current["next_live"] = time.monotonic() + self.settings.live_seconds
+        binding: Binding = current["binding"]
+        fresh = [entry for entry in live_entries(self.settings.live_command, current["since"])
+                 if entry[0] not in current["baseline"]]
+        current["proofs"] = read_proofs(fresh, binding.proof_pattern, binding.error_pattern)
+        states = phase_states(binding.phases, current["proofs"], None)
+        for item in changes(current["states"], states):
+            current["sink"]({"type": "phase", **item})
+        current["states"] = states
+
+    def finish(self, outcome: str) -> None:
+        current, self.current = self.current, None
+        if not current:
+            return
+        binding: Binding = current["binding"]
+        final = phase_states(binding.phases, current["proofs"], outcome)
+        for item in changes(current["states"], final):
+            current["sink"]({"type": "phase", **item})
+        current["sink"]({"type": "finished", "status": outcome, "folder": None, "states": final})
+
+        def close() -> None:
+            # packing a recording may take a minute: the next test is recorded meanwhile, into its own folder
+            current["screens"].close()
+            try:
+                current["sink"].flush()
+            except OSError:
+                pass
+
+        thread = threading.Thread(target=close, daemon=True)
+        thread.start()
+        self.closing.append(thread)
+
+    def close(self, outcome: str) -> None:
+        """The suite run ended: a test still open ends with it; recordings are waited for."""
+        self.finish("stopped" if outcome == "stopped" else outcome)
+        for thread in self.closing:
+            thread.join()
 
 
 def execute(
@@ -184,8 +310,10 @@ def execute(
         return
     should_stop = lambda: sink.stop_requested  # noqa: E731
     started = datetime.now()
+    suite = run.get("kind") == "center"
+    # A suite run records nothing itself: each of its tests gets its own run and recording (CaseRuns).
     # The windows are recorded for simulations too: the phases are timed, the screens are real.
-    screens = Screens(settings, sink, run["id"])
+    screens = Screens(settings, sink, run["id"], [] if suite else screens_of(binding))
     screens.start()
     if simulation is not None:
         try:
@@ -194,17 +322,23 @@ def execute(
         finally:
             screens.close()
         return
+    cases = CaseRuns(sink.aftertime, run["id"], bindings, settings, sink.echo) if suite else None
+    outcome = "error"
     try:
         busy = center.busy()
         job_id = center.run(binding.cases, f"Aftertime · {binding.title}", suites=list(target.get("suites") or []),
                             dry_run=bool(target.get("dryRun")), stop_on_failure=bool(target.get("stopOnFailure")))
         sink({"type": "queued", "job": job_id, "ahead": len(busy["queue"]) + (1 if busy["running"] else 0)})
-        follow(center, settings, binding, job_id, sink, should_stop=should_stop)
+        result = follow(center, settings, binding, job_id, sink, should_stop=should_stop,
+                        on_line=cases.line if cases else None, on_tick=cases.tick if cases else None)
+        outcome = (result or {}).get("status") or "error"
     except CenterError as exc:
         sink({"type": "error", "message": f"Центр E2E недоступний: {exc}"})
         return
     finally:
         screens.close()
+        if cases:
+            cases.close(outcome)
     import_report(settings, binding, run["id"], started, sink, every_launch=run.get("kind") == "center")
 
 
@@ -280,7 +414,11 @@ def serve(
             echo({"type": "claimed", "run": run["id"], "binding": run["binding"]})
             sink = AftertimeSink(aftertime, run["id"], echo)
             execute(run, bindings, center, settings, sink, simulation)
-            sink.flush()
+            try:
+                sink.flush()
+            except OSError as exc:
+                # Aftertime restarting at the end of a run must not stop the bridge: the next runs still come.
+                echo({"type": "error", "message": f"Aftertime недоступний: {exc}"})
             if once:
                 return
         else:

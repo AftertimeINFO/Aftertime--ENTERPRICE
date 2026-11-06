@@ -22,6 +22,8 @@ export function elementMarkers(run: Row | undefined, nodes: Row[] = []): Record<
   return markers;
 }
 
+export const isSimulation = (run: Row | undefined) => String(run?.center_job_id || "").startsWith("simulation-");
+
 export function runStatusLabel(run: Row | undefined): string {
   if (!run) return "Прогонів ще не було";
   const labels: Record<string, string> = {
@@ -34,7 +36,9 @@ export function runStatusLabel(run: Row | undefined): string {
     stopped: "Зупинено",
     error: `Помилка: ${run.error || ""}`,
   };
-  return labels[run.status] || run.status;
+  const label = labels[run.status] || run.status;
+  // a bridge started with --simulate times the phases itself: nothing ran on the stand
+  return isSimulation(run) ? `Симуляція (тест не виконувався) · ${label}` : label;
 }
 
 export function phaseSummary(run: Row | undefined): string {

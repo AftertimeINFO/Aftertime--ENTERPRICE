@@ -70,9 +70,11 @@ def test_center_run_starts_chosen_suites_and_imports_every_new_launch(tmp_path, 
             calls["run"] = (cases, suites, dry_run, stop_on_failure)
             return "job-9"
 
-    def fake_follow(center, settings, binding, job_id, sink, should_stop):
+    def fake_follow(center, settings, binding, job_id, sink, should_stop, on_line=None, on_tick=None):
         assert binding.phases == [] and job_id == "job-9"
+        assert on_line is not None and on_tick is not None  # tests of the suite are watched for their own runs
         sink({"type": "finished", "status": "passed", "states": []})
+        return {"status": "passed"}
 
     imported = []
     monkeypatch.setattr("e2e_bridge.service.follow", fake_follow)

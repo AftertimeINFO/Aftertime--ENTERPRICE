@@ -16,7 +16,7 @@ param(
     [int]$IntervalMs = 1000,
     [int]$Quality = 60,
     [int]$Width = 1366,
-    [int]$MaxMinutes = 180
+    [int]$MaxMinutes = 1440
 )
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing, System.Windows.Forms

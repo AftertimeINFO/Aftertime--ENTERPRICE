@@ -212,6 +212,7 @@ export function E2ePanel({ workflow, viewer, onError, onOpenReport, onScreen, re
       {runs.map((item) => <li key={item.id} className={item.id === selectedId ? "selected" : ""}>
         <button className="link" onClick={() => setSelectedId(item.id)}>{new Date(item.created_at).toLocaleString("uk-UA")}</button>
         <span className={`e2e-status ${item.status}`}>{runStatusLabel(item)}</span>
+        {item.parent_id && <small className="muted" title={item.target?.title || ""}>у складі набору</small>}
         {!isActive(item) && <button title="Програти виконаний тест: фази на BPMN і записані вікна в часі" onClick={() => {
           if (item.id === selectedId && run) startReplay(run);
           else { pendingReplay.current = item.id; setSelectedId(item.id); }

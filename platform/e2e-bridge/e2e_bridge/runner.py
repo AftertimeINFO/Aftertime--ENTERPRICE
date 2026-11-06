@@ -190,8 +190,12 @@ def follow(
     clock: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], None] = time.sleep,
     should_stop: Callable[[], bool] = lambda: False,
+    on_line: Callable[[str], None] | None = None,
+    on_tick: Callable[[], None] | None = None,
 ) -> dict[str, Any]:
     """Stream log lines and phase changes of one job until it finishes.
+
+    ``on_line`` sees every log line as it comes, ``on_tick`` runs once a round (tests of a suite run).
 
     Live proofs that already exist when following starts belong to earlier runs
     (the stand keeps them, and its clock may be shifted), so they are ignored;
@@ -216,6 +220,10 @@ def follow(
         position = job.get("next", position + len(new_lines))
         for line in new_lines:
             sink({"type": "log", "job": job_id, "line": line})
+            if on_line:
+                on_line(line)
+        if on_tick:
+            on_tick()
         status = job.get("status")
         if status in FINISHED:
             break

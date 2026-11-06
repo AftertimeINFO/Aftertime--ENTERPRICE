@@ -15,7 +15,7 @@ phase after the last proven one, the way the bridge reads proof files.
 from __future__ import annotations
 
 import re
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import select
@@ -157,15 +157,63 @@ def timeline_of(states: list[dict[str, Any]], since: datetime | None, until: dat
     return sorted(timeline, key=lambda entry: entry["t"])
 
 
+STEP_GAP_MS = 120_000  # longer pauses between report steps are clock shifts of the machine under test, not time spent
+
+
+def placed_timeline(states: list[dict[str, Any]], data: dict[str, Any], scenario: datetime, end: datetime | None) -> list[dict[str, Any]]:
+    """Phase changes of a report result on the host clock of the run that recorded the test.
+
+    Step times come from the machine under test, whose clock may be in another zone or shifted by
+    the scenario itself: a phase is placed by the time the steps really took since the scenario began.
+    """
+    steps = sorted((step for step in _flatten((data or {}).get("steps")) if isinstance(step.get("start"), (int, float))),
+                   key=lambda step: step["start"])
+    jumps: list[tuple[float, float]] = []  # (raw time, excess) of every clock shift between steps
+    reach = steps[0]["start"] if steps else 0
+    for step in steps:
+        if step["start"] - reach > STEP_GAP_MS:
+            jumps.append((step["start"], step["start"] - reach))
+        reach = max(reach, step.get("stop") or step["start"])
+    base = steps[0]["start"] if steps else 0
+
+    def placed(raw: float) -> datetime:
+        elapsed = raw - base - sum(excess for at, excess in jumps if at <= raw)
+        moment = scenario + timedelta(milliseconds=max(0, elapsed))
+        return min(moment, end) if end else moment
+
+    return sorted(({"t": placed(item["at"]).isoformat(), "phase": item["phase"], "state": item["state"]}
+                   for item in states if isinstance(item.get("at"), (int, float))), key=lambda entry: entry["t"])
+
+
+def _scenario_start(run: LabE2eRun) -> datetime | None:
+    """A test run inside a suite: its scenario begins when the stand finished preparing for it."""
+    prepared = [item["t"] for item in run.timeline or [] if "prep" in item and item["prep"].get("state") != "start"]
+    if prepared:
+        return datetime.fromisoformat(max(prepared))
+    return run.claimed_at
+
+
 def apply_to_run(db: Session, launch: ReportLaunch) -> bool:
-    """A report imported for a run of a bound process paints the phases the run could not prove."""
+    """A report imported for a run paints the phases its run could not prove.
+
+    A report of a suite run paints the runs of its tests, each with its own result.
+    """
     run = db.get(LabE2eRun, launch.e2e_run_id) if launch.e2e_run_id else None
-    if run is None or run.kind != "binding" or not run.binding:
+    if run is None:
+        return False
+    if run.kind == "center":
+        children = list(db.scalars(select(LabE2eRun).where(LabE2eRun.parent_id == run.id)))
+        return any([_paint(db, child, launch) for child in children])
+    return _paint(db, run, launch)
+
+
+def _paint(db: Session, run: LabE2eRun, launch: ReportLaunch) -> bool:
+    if run.kind != "binding" or not run.binding:
         return False
     if any(item.get("evidence") for item in run.states or []):
         return False  # proof files of the stand are the better witness
     binding = load_bindings().get(run.binding)
-    cases = (binding or {}).get("runner", {}).get("cases") or []
+    cases = [(run.target or {}).get("case")] if (run.target or {}).get("case") else (binding or {}).get("runner", {}).get("cases") or []
     result = db.scalar(select(ReportResult).where(ReportResult.launch_id == launch.id, ReportResult.full_name.in_(cases)))
     if binding is None or result is None:
         return False
@@ -173,13 +221,18 @@ def apply_to_run(db: Session, launch: ReportLaunch) -> bool:
     before = {item["phase"]: item.get("state") for item in run.states or []}
     run.states = [{**item, **{key: value for key, value in derived.get(item["phase"], {}).items() if key != "at"}}
                   for item in run.states or []]
-    changes = [entry for entry in timeline_of(list(derived.values()), run.claimed_at, run.finished_at)
-               if before.get(entry["phase"]) != entry["state"]]
-    now = datetime.now(UTC).isoformat()
+    if run.parent_id:
+        # the test's own clock is not the host's: phases are placed from the start of its scenario
+        scenario = _scenario_start(run)
+        placed = placed_timeline(list(derived.values()), result.data or {}, scenario, run.finished_at) if scenario else []
+    else:
+        placed = timeline_of(list(derived.values()), run.claimed_at, run.finished_at)
+    changes = [entry for entry in placed if before.get(entry["phase"]) != entry["state"]]
     moved = {entry["phase"] for entry in changes}
-    changes += [{"t": now, "phase": item["phase"], "state": item["state"]} for item in run.states
+    final = (run.finished_at or datetime.now(UTC)).isoformat()
+    changes += [{"t": final, "phase": item["phase"], "state": item["state"]} for item in run.states
                 if item["phase"] not in moved and before.get(item["phase"]) != item.get("state")]
     if changes:
-        run.timeline = (run.timeline or []) + changes
+        run.timeline = sorted((run.timeline or []) + changes, key=lambda entry: entry["t"])
     db.commit()
     return True

@@ -31,12 +31,16 @@ router = APIRouter(prefix="/api/v1/lab", tags=["e2e"])
 ACTIVE = ("queued", "claimed", "waiting", "running")
 FINISHED = ("passed", "failed", "stopped", "error")
 LOG_LIMIT = 5000
+# The control center's orchestrator announces each suite and the cases its runner gets.
+SUITE_LINE = re.compile(r"== suite ([\w.-]+):")
+CASES_LINE = re.compile(r"runner: .*?-Case ([\w.,-]+)")
 
 
 def _summary(run: LabE2eRun) -> dict[str, Any]:
     return {
         "id": run.id,
         "workflow_version_id": run.workflow_version_id,
+        "parent_id": run.parent_id,
         "binding": run.binding,
         "kind": run.kind,
         "target": run.target,
@@ -196,15 +200,63 @@ def center_state(db: Session = Depends(get_db)) -> dict[str, Any]:
     return {"online": age < BRIDGE_TIMEOUT, "received_at": snapshot.received_at, "data": snapshot.data}
 
 
+def _bound_test(db: Session, version_id: str) -> tuple[dict[str, Any] | None, list[str]]:
+    version = db.get(LabWorkflowVersion, version_id)
+    if not version:
+        raise HTTPException(404, "Workflow not found")
+    bindings = load_bindings()
+    coverage = phase_coverage(version.bpmn_xml, bindings)
+    binding = bindings.get(coverage["binding"]) if coverage else None
+    return binding, (binding or {}).get("runner", {}).get("cases") or []
+
+
 @router.get("/workflows/{version_id}/e2e-runs")
 def list_e2e_runs(version_id: str, db: Session = Depends(get_db)) -> list[dict[str, Any]]:
+    """Runs of this process: started from it, or recorded as its test inside a suite run (``parent_id``)."""
     runs = db.scalars(
-        select(LabE2eRun)
-        .where(LabE2eRun.workflow_version_id == version_id)
-        .order_by(LabE2eRun.created_at.desc())
-        .limit(20)
+        select(LabE2eRun).where(LabE2eRun.workflow_version_id == version_id).order_by(LabE2eRun.created_at.desc()).limit(20)
     )
     return [_summary(run) for run in runs]
+
+
+def _bound_version(db: Session, binding: str) -> tuple[LabWorkflowVersion | None, list[dict[str, Any]]]:
+    """The newest published process bound to this test, with its phases as a run of the process has them."""
+    bindings = load_bindings()
+    versions = db.scalars(select(LabWorkflowVersion).where(LabWorkflowVersion.status == "published")
+                          .order_by(LabWorkflowVersion.published_at.desc().nulls_last()))
+    for version in versions:
+        coverage = phase_coverage(version.bpmn_xml, bindings)
+        if coverage and coverage.get("binding") == binding:
+            return version, list(coverage.get("phases") or [])
+    return None, [{"phase": phase} for phase in (bindings.get(binding) or {}).get("phases") or []]
+
+
+@router.post("/e2e-runs/{run_id}/cases")
+def start_case_run(run_id: str, body: dict[str, Any], db: Session = Depends(get_db)) -> dict[str, Any]:
+    """The bridge saw a test of a suite begin: it gets its own run (recording, phases) from this moment."""
+    parent = _get_run(db, run_id)
+    case, binding = str(body.get("case") or ""), str(body.get("binding") or "")
+    if not ID_RE.match(case) or not ID_RE.match(binding):
+        raise HTTPException(422, "Потрібні case і binding")
+    version, phases = _bound_version(db, binding)
+    now = datetime.now(UTC)
+    run = LabE2eRun(
+        workflow_version_id=version.id if version else None,
+        parent_id=parent.id,
+        kind="binding",
+        binding=binding,
+        target={"case": case, "suite_run": parent.id, "title": (parent.target or {}).get("title")},
+        status="running",
+        center_job_id=parent.center_job_id,
+        claimed_at=now,
+        states=[{**item, "state": "pending"} for item in phases],
+        timeline=[{"t": now.isoformat(), "status": "running"}],
+        log=[],
+    )
+    db.add(run)
+    db.commit()
+    db.refresh(run)
+    return _summary(run)
 
 
 @router.get("/workflows/{version_id}/report-results")
@@ -213,13 +265,7 @@ def workflow_report_results(version_id: str, limit: int = 10, db: Session = Depe
 
     Covers runs started anywhere: from this process, as part of a suite, or by the control center.
     """
-    version = db.get(LabWorkflowVersion, version_id)
-    if not version:
-        raise HTTPException(404, "Workflow not found")
-    bindings = load_bindings()
-    coverage = phase_coverage(version.bpmn_xml, bindings)
-    binding = bindings.get(coverage["binding"]) if coverage else None
-    cases = (binding or {}).get("runner", {}).get("cases") or []
+    binding, cases = _bound_test(db, version_id)
     if not cases:
         return []
     rows = db.execute(
@@ -337,6 +383,13 @@ def _apply(run: LabE2eRun, event: dict[str, Any], kind: Any, now: datetime) -> N
         prep = parse_prep_line(line)
         if prep:
             run.timeline = (run.timeline or []) + [{"t": now.isoformat(), "prep": prep}]
+        # a suite of a center run begins: its cases mark where each test sits in a recording of many suites
+        suite = SUITE_LINE.search(line)
+        if suite:
+            run.timeline = (run.timeline or []) + [{"t": now.isoformat(), "suite": suite.group(1), "cases": []}]
+        cases = CASES_LINE.search(line)
+        if cases and run.timeline and "suite" in run.timeline[-1] and not run.timeline[-1].get("cases"):
+            run.timeline = run.timeline[:-1] + [{**run.timeline[-1], "cases": cases.group(1).split(",")}]
     elif kind == "states":
         run.states = _merge_states(run.states, event.get("states") or [])
     elif kind == "phase":

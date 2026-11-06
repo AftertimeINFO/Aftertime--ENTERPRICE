@@ -42,9 +42,13 @@ class ScreenRecorder:
         every: float = 3,
         runner: Callable[..., bool] = _run,
         send_recording: SendRecording | None = None,
+        env: dict[str, str] | None = None,
     ) -> None:
         self.command = command
         self.send = send
+        # BRIDGE_RECORDING_ID (and BRIDGE_CASE for a test of a suite) go to every action: a command keeps each
+        # recording apart, so the next test can start recording while the previous one is still being packed.
+        self.env = dict(env or {})
         self.send_recording = send_recording
         self.started_at = ""
         self.every = every
@@ -55,8 +59,14 @@ class ScreenRecorder:
         self._thread: threading.Thread | None = None
         self._file = Path(tempfile.gettempdir()) / f"aftertime-frame-{os.getpid()}-{id(self)}.jpg"
 
+    def _call(self, action: str, extra: dict[str, str] | None = None, timeout: float = 60) -> bool:
+        env = {**self.env, **(extra or {})}
+        if not env:
+            return self.runner(self.command, action) if timeout == 60 else self.runner(self.command, action, None, timeout=timeout)
+        return self.runner(self.command, action, env) if timeout == 60 else self.runner(self.command, action, env, timeout=timeout)
+
     def start(self) -> None:
-        if not self.runner(self.command, "start"):
+        if not self._call("start"):
             return
         # The recording's own clock starts now; frames are offsets from this host time.
         self.started_at = datetime.now(timezone.utc).isoformat()
@@ -66,7 +76,7 @@ class ScreenRecorder:
     def grab(self) -> None:
         captured = datetime.now(timezone.utc).isoformat()
         self._file.unlink(missing_ok=True)
-        if self.runner(self.command, "frame", {"BRIDGE_FRAME_OUT": str(self._file)}) and self._file.exists():
+        if self._call("frame", {"BRIDGE_FRAME_OUT": str(self._file)}) and self._file.exists():
             try:
                 self.send(self._file.read_bytes(), captured)
                 self.frames += 1
@@ -84,16 +94,26 @@ class ScreenRecorder:
         self._stop.set()
         self._thread.join(timeout=self.every + 60)
         self.grab()
-        self.runner(self.command, "stop")
+        self._call("stop")
         self._file.unlink(missing_ok=True)
         if self.send_recording:
             archive = self._file.with_suffix(".zip")
             archive.unlink(missing_ok=True)
-            if self.runner(self.command, "pack", {"BRIDGE_RECORDING_OUT": str(archive)}, timeout=600) and archive.exists():
+            started = archive.with_name(archive.name + ".started")
+            started.unlink(missing_ok=True)
+            if self._call("pack", {"BRIDGE_RECORDING_OUT": str(archive)}, timeout=600) and archive.exists():
+                # a command that captured from before ``start`` (the test itself buffers its first frames)
+                # says when its recording really began: <archive>.started, an ISO time
                 try:
-                    self.send_recording(archive, self.started_at)
+                    began = started.read_text(encoding="utf-8").strip() if started.exists() else ""
+                    datetime.fromisoformat(began)
+                except ValueError:
+                    began = ""
+                try:
+                    self.send_recording(archive, began or self.started_at)
                     self.recorded = True
                 except OSError:
                     pass
                 finally:
                     archive.unlink(missing_ok=True)
+                    started.unlink(missing_ok=True)
