@@ -66,13 +66,16 @@ class Settings:
 
     @classmethod
     def load(cls, config_dir: Path) -> "Settings":
+        """``bridge.env`` values may name the settings folder as ``%AFTERTIME_CONFIG_DIR%`` (or ``${...}``):
+        a deployment then works from any folder. The commands the bridge runs see the same variable."""
+        os.environ.setdefault("AFTERTIME_CONFIG_DIR", str(config_dir.resolve()))
         values = dict(os.environ)
         env_file = config_dir / "e2e" / "bridge.env"
         if env_file.exists():
             for line in env_file.read_text(encoding="utf-8").splitlines():
                 if "=" in line and not line.lstrip().startswith("#"):
                     key, value = line.split("=", 1)
-                    values.setdefault(key.strip(), value.strip())
+                    values.setdefault(key.strip(), os.path.expandvars(value.strip()))
         return cls(
             center_url=values.get("CENTER_URL", ""),
             run_root=Path(values.get("RUN_ROOT", ".")),

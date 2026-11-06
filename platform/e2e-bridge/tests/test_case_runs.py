@@ -52,3 +52,15 @@ def test_a_test_records_only_the_windows_set_for_it():
     assert Screens(settings, sink, "r", []).recorders == []
     recorder = Screens(settings, sink, "r1", None, "case-x").recorders[0][1]
     assert recorder.env == {"BRIDGE_RECORDING_ID": "r1", "BRIDGE_CASE": "case-x"}
+
+
+def test_bridge_settings_name_the_settings_folder_instead_of_a_fixed_path(tmp_path, monkeypatch):
+    (tmp_path / "e2e").mkdir()
+    (tmp_path / "e2e" / "screens.json").write_text('[{"id": "web", "title": "Web", "command": "w"}]', encoding="utf-8")
+    (tmp_path / "e2e" / "bridge.env").write_text(
+        "SCREENS_FILE=%AFTERTIME_CONFIG_DIR%\e2e\screens.json\nPACKS_DIR=${AFTERTIME_CONFIG_DIR}\nLIVE_COMMAND=run %AFTERTIME_CONFIG_DIR%\live.ps1\n",
+        encoding="utf-8")
+    monkeypatch.delenv("AFTERTIME_CONFIG_DIR", raising=False)
+    settings = Settings.load(tmp_path)
+    assert [screen.id for screen in settings.screens] == ["web"]
+    assert settings.packs_dir == tmp_path.resolve() and settings.live_command == f"run {tmp_path.resolve()}\live.ps1"
