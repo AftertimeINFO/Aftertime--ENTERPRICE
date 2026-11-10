@@ -24,7 +24,8 @@ from app.services.report_phases import derive_states
 from app.services.stand_prep import parse_prep_line
 from app.services.tests_catalog import sync_catalog
 from app.services.reports import reports_dir
-from app.services.test_bindings import load_bindings, phase_coverage
+from app.services.process_library import published_library
+from app.services.test_bindings import load_bindings, phase_coverage, process_bindings
 
 router = APIRouter(prefix="/api/v1/lab", tags=["e2e"])
 
@@ -113,15 +114,22 @@ def _get_run(db: Session, run_id: str) -> LabE2eRun:
 
 
 @router.post("/workflows/{version_id}/e2e-runs")
-def start_e2e_run(version_id: str, db: Session = Depends(get_db)) -> dict[str, Any]:
+def start_e2e_run(version_id: str, db: Session = Depends(get_db), binding: str | None = None) -> dict[str, Any]:
+    """Start the test of a process; ``binding`` picks one when several tests pass through it."""
     version = db.get(LabWorkflowVersion, version_id)
     if not version:
         raise HTTPException(404, "Workflow not found")
     if version.status != "published":
         raise HTTPException(409, "Тест запускається лише для опублікованої версії процесу")
-    coverage = phase_coverage(version.bpmn_xml, load_bindings())
-    if not coverage:
+    bindings = load_bindings()
+    candidates = process_bindings(version.bpmn_xml, bindings)
+    if not candidates:
         raise HTTPException(409, "Процес не прив'язано до тестів")
+    if binding is None and len(candidates) > 1:
+        raise HTTPException(409, {"message": "Процес проходять кілька тестів: оберіть один", "bindings": candidates})
+    if binding is not None and binding not in candidates:
+        raise HTTPException(409, {"message": "Цей тест не прив'язано до процесу", "bindings": candidates})
+    coverage = phase_coverage(version.bpmn_xml, bindings, binding or candidates[0], published_library(db, version.bpmn_xml))
     if not coverage["covered"]:
         raise HTTPException(422, {"message": "Процес не покриває фази тесту", "errors": coverage["errors"]})
     _ensure_stand_free(db)
@@ -200,14 +208,17 @@ def center_state(db: Session = Depends(get_db)) -> dict[str, Any]:
     return {"online": age < BRIDGE_TIMEOUT, "received_at": snapshot.received_at, "data": snapshot.data}
 
 
-def _bound_test(db: Session, version_id: str) -> tuple[dict[str, Any] | None, list[str]]:
+def _bound_tests(db: Session, version_id: str) -> dict[str, dict[str, Any]]:
+    """Report case name → binding, for every test bound to the process."""
     version = db.get(LabWorkflowVersion, version_id)
     if not version:
         raise HTTPException(404, "Workflow not found")
     bindings = load_bindings()
-    coverage = phase_coverage(version.bpmn_xml, bindings)
-    binding = bindings.get(coverage["binding"]) if coverage else None
-    return binding, (binding or {}).get("runner", {}).get("cases") or []
+    return {
+        case: bindings[key]
+        for key in process_bindings(version.bpmn_xml, bindings)
+        for case in (bindings.get(key) or {}).get("runner", {}).get("cases") or []
+    }
 
 
 @router.get("/workflows/{version_id}/e2e-runs")
@@ -225,8 +236,8 @@ def _bound_version(db: Session, binding: str) -> tuple[LabWorkflowVersion | None
     versions = db.scalars(select(LabWorkflowVersion).where(LabWorkflowVersion.status == "published")
                           .order_by(LabWorkflowVersion.published_at.desc().nulls_last()))
     for version in versions:
-        coverage = phase_coverage(version.bpmn_xml, bindings)
-        if coverage and coverage.get("binding") == binding:
+        if binding in process_bindings(version.bpmn_xml, bindings):
+            coverage = phase_coverage(version.bpmn_xml, bindings, binding, published_library(db, version.bpmn_xml))
             return version, list(coverage.get("phases") or [])
     return None, [{"phase": phase} for phase in (bindings.get(binding) or {}).get("phases") or []]
 
@@ -265,13 +276,13 @@ def workflow_report_results(version_id: str, limit: int = 10, db: Session = Depe
 
     Covers runs started anywhere: from this process, as part of a suite, or by the control center.
     """
-    binding, cases = _bound_test(db, version_id)
-    if not cases:
+    by_case = _bound_tests(db, version_id)
+    if not by_case:
         return []
     rows = db.execute(
         select(ReportResult, ReportLaunch)
         .join(ReportLaunch, ReportLaunch.id == ReportResult.launch_id)
-        .where(ReportResult.full_name.in_(cases))
+        .where(ReportResult.full_name.in_(list(by_case)))
         .order_by(ReportResult.start.desc().nulls_last())
         .limit(max(1, min(limit, 50)))
     ).all()
@@ -284,7 +295,7 @@ def workflow_report_results(version_id: str, limit: int = 10, db: Session = Depe
         "duration_ms": result.duration_ms,
         "launch": {"id": launch.id, "name": launch.name, "e2e_run_id": launch.e2e_run_id},
         "states": [{key: value for key, value in item.items() if key != "at"}
-                   for item in derive_states(binding, result.status, result.data or {}, result.message)],
+                   for item in derive_states(by_case[result.full_name], result.status, result.data or {}, result.message)],
     } for result, launch in rows]
 
 

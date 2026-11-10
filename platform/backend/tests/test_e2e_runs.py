@@ -231,3 +231,60 @@ async def test_every_recorded_window_keeps_its_own_frames_and_video(published, t
         assert streams["screen"]["recording"] is None and e2e_run(run["id"], 0, db)["recording"] is None
         assert str(recording_video(run["id"], "web").path).endswith(".web.mp4")
         stop_e2e_run(run["id"], db)
+
+
+SHARED_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:aftertime="https://aftertime.local/bpmn" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" id="d">
+  <bpmn:process id="e2e-shared-path" name="Спільний процес">
+    <bpmn:startEvent id="start" />
+    <bpmn:userTask id="order_task" name="Оформити" aftertime:testPhase="order" />
+    <bpmn:exclusiveGateway id="extra" default="f_none" />
+    <bpmn:userTask id="charge_task" name="Доплата" aftertime:testPhase="charge" />
+    <bpmn:userTask id="close_task" name="Закрити" aftertime:testPhase="close" />
+    <bpmn:endEvent id="end" />
+    <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="order_task" />
+    <bpmn:sequenceFlow id="f2" sourceRef="order_task" targetRef="extra" />
+    <bpmn:sequenceFlow id="f_none" sourceRef="extra" targetRef="close_task" />
+    <bpmn:sequenceFlow id="f_extra" sourceRef="extra" targetRef="charge_task"><bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">extra_due &gt; 0</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="f5" sourceRef="charge_task" targetRef="close_task" />
+    <bpmn:sequenceFlow id="f6" sourceRef="close_task" targetRef="end" />
+  </bpmn:process>
+</bpmn:definitions>"""
+
+PATH_BINDINGS = {
+    "path-plain": {"title": "Без доплати", "process": "e2e-shared-path", "phases": ["order", "close"],
+                   "path": {"extra": "f_none"}, "runner": {"cases": ["case-plain"]}},
+    "path-extra": {"title": "З доплатою", "process": "e2e-shared-path", "phases": ["order", "charge", "close"],
+                   "path": {"extra": "charge_task"}, "runner": {"cases": ["case-extra"]}},
+}
+
+
+def test_several_tests_pass_through_one_shared_process(tmp_path, monkeypatch):
+    (tmp_path / "e2e").mkdir()
+    (tmp_path / "e2e" / "bindings.json").write_text(json.dumps(PATH_BINDINGS), encoding="utf-8")
+    monkeypatch.setenv("AFTERTIME_CONFIG_DIR", str(tmp_path))
+    monkeypatch.setenv("AFTERTIME_PACKS_DIR", str(tmp_path / "no-packs"))
+    with SessionLocal() as db:
+        if db.query(LabE2eRun).filter(LabE2eRun.status.in_(["queued", "claimed", "waiting", "running"])).count():
+            pytest.skip("на стенді йде прогін; тести прогонів запустіть після нього")
+        created = create_workflow({"name": "Спільний процес E2E"}, db)
+        version_id = created["version"]["id"]
+        save_workflow_bpmn(version_id, {"bpmn_xml": SHARED_XML}, db)
+        publish_workflow(version_id, db)
+        try:
+            with pytest.raises(HTTPException) as ambiguous:
+                start_e2e_run(version_id, db)
+            assert ambiguous.value.status_code == 409
+            assert ambiguous.value.detail["bindings"] == ["path-extra", "path-plain"]
+            with pytest.raises(HTTPException) as foreign:
+                start_e2e_run(version_id, db, binding="e2e-test-order")
+            assert foreign.value.status_code == 409
+            run = start_e2e_run(version_id, db, binding="path-plain")
+            assert run["binding"] == "path-plain"
+            assert [(item["phase"], item["element"]) for item in run["states"]] == [
+                ("order", "order_task"), ("close", "close_task"),
+            ]
+            stop_e2e_run(run["id"], db)
+        finally:
+            db.delete(db.get(LabWorkflow, created["version"]["workflow_id"]))
+            db.commit()

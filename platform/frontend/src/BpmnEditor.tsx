@@ -232,13 +232,14 @@ export function BpmnEditor({ workflow, immutable, onSaved, onValidation, onError
         {bindings.map((binding) => <option value={binding.id} key={binding.id}>{binding.title}</option>)}
       </select></label>
       {workflow.test && <ul className="test-coverage">
+        {(workflow.test.tests || []).map((item: Row) => <li key={item.binding} className={item.covered ? "covered" : "missing"}>{item.covered ? "✓" : "✗"} {item.title}</li>)}
         {workflow.test.phases.map((item: Row) => <li key={item.phase} className={item.element ? "covered" : "missing"}>{item.element ? "✓" : "✗"} {item.phase}{item.element ? ` → ${item.element}` : ""}</li>)}
         {[...workflow.test.errors, ...workflow.test.warnings].map((message: string) => <li key={message} className="note">{message}</li>)}
       </ul>}
       {workflow.test && dirty && <span>Покриття оновиться після збереження.</span>}
     </aside>}
     {immutable && ready && workflow.test && <E2ePanel workflow={workflow} viewer={editor.current} onError={onError} onOpenReport={onOpenReport} onScreen={setScreen} replayRequest={replayRequest} />}
-    <datalist id="bpmn-test-phases">{phaseOptions(bindings, processObject()?.$attrs?.["aftertime:testBinding"]).map((phase) => <option value={phase} key={phase} />)}</datalist>
+    <datalist id="bpmn-test-phases">{phaseOptions(bindings, processObject()?.$attrs?.["aftertime:testBinding"], processObject()?.id).map((phase) => <option value={phase} key={phase} />)}</datalist>
   </div>;
 }
 

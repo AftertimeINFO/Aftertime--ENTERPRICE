@@ -17,8 +17,12 @@ export function acceptsTestPhase(type: string): boolean {
   return PHASE_TYPES.has(type);
 }
 
-export function phaseOptions(bindings: Row[], bindingId: string | undefined): string[] {
-  return bindings.find((binding) => binding.id === bindingId)?.phases || [];
+export function phaseOptions(bindings: Row[], bindingId: string | undefined, processId?: string): string[] {
+  const own = bindings.find((binding) => binding.id === bindingId)?.phases;
+  if (own) return own;
+  // A process that tests pass through by a path: the phases of all of them.
+  const followed = processId ? bindings.filter((binding) => binding.process === processId) : [];
+  return [...new Set(followed.flatMap((binding) => binding.phases || []))].filter((phase) => !String(phase).includes("."));
 }
 
 /** Latest version of every workflow, test-bound processes first, then by name. */

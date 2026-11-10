@@ -16,6 +16,15 @@ describe("test bindings", () => {
     expect(phaseOptions(bindings, undefined)).toEqual([]);
   });
 
+  it("suggests the phases of every test that passes through a process by a path", () => {
+    const bindings = [
+      { id: "plain", process: "shared", phases: ["order", "close"] },
+      { id: "extra", process: "shared", phases: ["order", "charge", "close", "sub.block"] },
+    ];
+    expect(phaseOptions(bindings, undefined, "shared")).toEqual(["order", "close", "charge"]);
+    expect(phaseOptions(bindings, undefined, "other")).toEqual([]);
+  });
+
   it("lists the latest version of each process, test-bound ones first", () => {
     const catalog = processCatalog([
       { id: "a1", workflow_id: "a", version: 1, name: "Аварійний ремонт", bpmn_xml: "" },

@@ -43,7 +43,8 @@ from app.services.model_lab import (
 from app.services.model_contracts import connection_diagnostics, normalized_ports, observable_catalog, stable_key
 from app.services.bpmn_profile import build_bpmn_xml, build_collaboration_xml, parse_bpmn, validate_bpmn
 from app.services.bpmn_svg import SvgPresentationError, annotate_svg, bpmn_sha256
-from app.services.test_bindings import load_bindings, phase_coverage
+from app.services.process_library import published_library
+from app.services.test_bindings import load_bindings, workflow_coverage
 from app.services.qualification import (
     replay_qualification_package,
     validate_qualification_package,
@@ -1504,14 +1505,15 @@ def workflow(version_id: str, db: Session = Depends(get_db)) -> dict:
     if not version.bpmn_xml and nodes:
         _refresh_workflow_xml(db, version)
         db.commit()
-    return {"version": row(version), "nodes": [row(x) for x in nodes], "transitions": [row(x) for x in transitions], "presentation": _presentation_status(db, version), "test": phase_coverage(version.bpmn_xml, load_bindings()) if version.bpmn_xml else None}
+    return {"version": row(version), "nodes": [row(x) for x in nodes], "transitions": [row(x) for x in transitions], "presentation": _presentation_status(db, version), "test": workflow_coverage(version.bpmn_xml, load_bindings(), published_library(db, version.bpmn_xml)) if version.bpmn_xml else None}
 
 
 @router.get("/test-bindings")
 def list_test_bindings() -> list[dict[str, Any]]:
     """Bindings from the settings directory, without runner details."""
     return [
-        {"id": key, "title": value.get("title", key), "phases": value.get("phases", [])}
+        {"id": key, "title": value.get("title", key), "phases": value.get("phases", []),
+         "process": value.get("process"), "path": value.get("path") or {}}
         for key, value in sorted(load_bindings().items())
     ]
 
@@ -1722,7 +1724,7 @@ def validate_workflow(version_id: str, db: Session = Depends(get_db)) -> dict:
     for node in nodes:
         try: compile(node.python_code or "pass", f"<workflow:{node.node_key}>", "exec")
         except SyntaxError as exc: errors.append(f"{node.name}: {exc}")
-    coverage = phase_coverage(version.bpmn_xml, load_bindings())
+    coverage = workflow_coverage(version.bpmn_xml, load_bindings(), published_library(db, version.bpmn_xml))
     if coverage:
         errors.extend(coverage["errors"])
         warnings.extend(coverage["warnings"])

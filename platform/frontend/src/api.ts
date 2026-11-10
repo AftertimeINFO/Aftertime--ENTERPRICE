@@ -42,7 +42,7 @@ export const api = {
   saveStandFile: (body: { path: string; text: string; sha: string; note?: string }) => request<Row>("/lab/stand/files", json("PUT", body)),
   standFileVersions: (path: string) => request<Row[]>(`/lab/stand/files/versions?path=${encodeURIComponent(path)}`),
   standFileVersion: (id: string) => request<Row>(`/lab/stand/files/versions/${id}`),
-  startE2eRun: (version: string) => request<Row>(`/lab/workflows/${version}/e2e-runs`, json("POST")),
+  startE2eRun: (version: string, binding?: string) => request<Row>(`/lab/workflows/${version}/e2e-runs${binding ? `?binding=${encodeURIComponent(binding)}` : ""}`, json("POST")),
   e2eRun: (id: string, start = 0) => request<Row>(`/lab/e2e-runs/${id}?start=${start}`),
   e2eFrames: (id: string, stream?: string) => request<Row[]>(`/lab/e2e-runs/${id}/frames${stream ? `?stream=${encodeURIComponent(stream)}` : ""}`),
   e2eRecordingUrl: (runId: string, stream = "screen") =>

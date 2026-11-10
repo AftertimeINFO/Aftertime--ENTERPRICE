@@ -29,6 +29,10 @@ export function E2ePanel({ workflow, viewer, onError, onOpenReport, onScreen, re
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [run, setRun] = useState<Row | undefined>();
   const [lines, setLines] = useState<string[]>([]);
+  // Several tests can follow different paths through one process: the one to run is chosen here.
+  const tests: Row[] = workflow.test.tests || [];
+  const [testId, setTestId] = useState<string>("");
+  const chosenTest = tests.find((item) => item.binding === testId) || tests[0];
   const [focusPhase, setFocusPhase] = useState<string | null>(null);
   const [replay, setReplay] = useState<Replay | null>(null);
   // Results of the bound test from reports (runs of a whole suite included), painted on demand.
@@ -162,7 +166,7 @@ export function E2ePanel({ workflow, viewer, onError, onOpenReport, onScreen, re
 
   const start = async () => {
     try {
-      const created = await api.startE2eRun(versionId);
+      const created = await api.startE2eRun(versionId, tests.length > 1 ? chosenTest?.binding : undefined);
       setRuns((old) => [created, ...old]);
       setSelectedId(created.id);
     } catch (error) {
@@ -178,8 +182,11 @@ export function E2ePanel({ workflow, viewer, onError, onOpenReport, onScreen, re
   return <aside className="e2e-panel">
     <header>
       <small>E2E-ТЕСТ · {workflow.test.title}</small>
+      {tests.length > 1 && !isActive(run) && <select value={chosenTest?.binding || ""} onChange={(event) => setTestId(event.target.value)}>
+        {tests.map((item: Row) => <option key={item.binding} value={item.binding}>{item.title}</option>)}
+      </select>}
       {isActive(run) ? <button onClick={stop} disabled={run?.stop_requested}>{run?.stop_requested ? "Зупиняється…" : "Зупинити"}</button>
-        : <button onClick={start} disabled={!workflow.test.covered || !!activeRun}>Запустити тест</button>}
+        : <button onClick={start} disabled={!(tests.length > 1 ? chosenTest?.covered : workflow.test.covered) || !!activeRun}>Запустити тест</button>}
     </header>
     <div className={`e2e-status ${shown?.status || "none"}`}>{replay ? "Відтворення · " : reportView ? "Зі звіту · " : ""}{runStatusLabel(shown)}{shown ? ` · ${phaseSummary(shown)}` : ""}</div>
     {reportView && <div className="report-view-note">
