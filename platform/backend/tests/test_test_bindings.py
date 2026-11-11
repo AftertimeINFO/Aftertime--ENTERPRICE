@@ -191,3 +191,9 @@ def test_one_to_one_binding_is_unchanged_next_to_path_bindings():
     xml = process()
     assert process_bindings(xml, both) == ["order-flow"]
     assert workflow_coverage(xml, both) == phase_coverage(xml, both)
+
+
+def test_old_process_loses_a_test_that_moved_to_a_shared_process():
+    moved = {"order-flow": {**PATHS["no-extra"], "phases": ["order", "deposit", "close"]}}
+    assert process_bindings(process(), moved) == []
+    assert process_bindings(SHARED, moved) == ["order-flow"]

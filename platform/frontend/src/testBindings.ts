@@ -25,6 +25,11 @@ export function phaseOptions(bindings: Row[], bindingId: string | undefined, pro
   return [...new Set(followed.flatMap((binding) => binding.phases || []))].filter((phase) => !String(phase).includes("."));
 }
 
+/** Id of the (first) BPMN process of a document. */
+export function processIdOf(bpmnXml: string | undefined): string | undefined {
+  return /<bpmn:process(?:\s+[\w:-]+="[^"]*")*?\s+id="([^"]+)"/.exec(bpmnXml || "")?.[1];
+}
+
 /** Latest version of every workflow, test-bound processes first, then by name. */
 export function processCatalog(workflows: Row[]): Row[] {
   const latest = new Map<string, Row>();

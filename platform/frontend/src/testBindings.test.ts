@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { acceptsTestPhase, phaseOptions, processCatalog } from "./testBindings";
+import { acceptsTestPhase, phaseOptions, processCatalog, processIdOf } from "./testBindings";
 
 describe("test bindings", () => {
   it("allows phases only on elements a token waits on", () => {
@@ -23,6 +23,12 @@ describe("test bindings", () => {
     ];
     expect(phaseOptions(bindings, undefined, "shared")).toEqual(["order", "close", "charge"]);
     expect(phaseOptions(bindings, undefined, "other")).toEqual([]);
+  });
+
+  it("reads the id of the process of a document", () => {
+    expect(processIdOf('<bpmn:process id="rental-lifecycle" name="x">')).toBe("rental-lifecycle");
+    expect(processIdOf('<bpmn:process name="x" id="p2" isExecutable="true">')).toBe("p2");
+    expect(processIdOf("")).toBeUndefined();
   });
 
   it("lists the latest version of each process, test-bound ones first", () => {

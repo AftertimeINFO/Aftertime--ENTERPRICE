@@ -104,7 +104,11 @@ def read_test_annotations(bpmn_xml: str) -> dict[str, Any]:
 def process_bindings(bpmn_xml: str, bindings: dict[str, dict[str, Any]]) -> list[str]:
     """Tests bound to this process: the one it names itself, then those that follow a path through it."""
     annotations = read_test_annotations(bpmn_xml)
-    found = [annotations["binding"]] if annotations["binding"] else []
+    own = annotations["binding"]
+    # A test that now follows a path through another process has moved there: an old process
+    # that still names it is no longer its process.
+    moved = own and (bindings.get(own) or {}).get("process") not in (None, annotations["process"])
+    found = [own] if own and not moved else []
     if annotations["process"]:
         found += sorted(
             key for key, value in bindings.items() if value.get("process") == annotations["process"] and key not in found

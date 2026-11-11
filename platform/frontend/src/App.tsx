@@ -17,7 +17,7 @@ import {
 import "@xyflow/react/dist/style.css";
 import { api, type PortContract, type Row, type Workspace } from "./api";
 import { BpmnCollaboration, BpmnEditor } from "./BpmnEditor";
-import { processCatalog } from "./testBindings";
+import { processCatalog, processIdOf } from "./testBindings";
 import { defaultProcess, hasSystemModel, inPack, readStoredPack, selectablePacks, storePack } from "./packs";
 import { ResultsView } from "./ResultsView";
 import { TestsView } from "./TestsView";
@@ -577,8 +577,10 @@ export default function App() {
     setSectionTab(options.tab ?? null);
   };
   const openProcess = async (binding: string, replayRunId?: string) => {
+    // A test either names its own process or follows a path through a shared one (`process` of the binding).
+    const shared = (await api.testBindings().catch(() => [] as Row[])).find((item) => item.id === binding)?.process;
     const target = processCatalog(w?.workflows || []).find((item) =>
-      item.bpmn_xml?.includes(`aftertime:testBinding="${binding}"`));
+      shared ? processIdOf(item.bpmn_xml) === shared : item.bpmn_xml?.includes(`aftertime:testBinding="${binding}"`));
     if (!target) { setError(`Процес із прив'язкою «${binding}» не знайдено`); return; }
     if (workflow?.version?.id !== target.id) setWorkflow(await api.workflow(target.id));
     setValidation(null);
