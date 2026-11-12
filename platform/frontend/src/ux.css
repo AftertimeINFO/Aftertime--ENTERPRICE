@@ -263,3 +263,17 @@
 .prep-progress .bar i { display: block; height: 100%; background: #9ec9ff; }
 .prep-progress.failed .bar i { background: #ff8a7d; }
 .prep-progress small { color: #93a8a0; }
+
+/* The process field of a run: the diagram and each recorded window are tabs; one fills the field (env_ai_dev#8) */
+.run-tabs { position: absolute; top: 0; right: 0; left: 0; z-index: 9; display: flex; flex-wrap: wrap; align-items: center; gap: 4px;
+  min-height: 40px; padding: 4px 8px 0; border-bottom: 1px solid #315147; background: #0b1a16; color: #cfe0d8; font-size: 12px; }
+.run-tabs [role=tab] { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 4px 14px; border: 1px solid #315147;
+  border-bottom: 0; border-radius: 6px 6px 0 0; background: #10241e; color: #9fb3ab; cursor: pointer; }
+.run-tabs [role=tab]:hover { color: #fff; border-color: #64d8cb; }
+.run-tabs [role=tab].active { background: #164a3f; color: #fff; border-color: #64d8cb; font-weight: 600; }
+.run-tabs [role=tab]:focus-visible { outline: 2px solid #9ec9ff; outline-offset: 1px; }
+.run-tabs-controls { flex: 1 1 320px; display: flex; justify-content: flex-end; min-width: 0; padding-bottom: 4px; }
+.run-tabs-controls .replay-controls { flex: 0 1 560px; flex-wrap: nowrap; }
+.native-bpmn-editor.with-tabs .native-bpmn-canvas { position: absolute; inset: 44px 0 0; width: auto; height: auto; }
+.native-bpmn-editor.with-tabs .bpmn-properties { top: 62px; }
+.run-tab-view { position: absolute; inset: 44px 0 0; z-index: 8; display: flex; min-height: 0; padding: 6px; background: #050c0a; color: #e4eee9; }

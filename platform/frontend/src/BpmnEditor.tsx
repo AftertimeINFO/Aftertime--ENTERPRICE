@@ -8,7 +8,9 @@ import { api, type Row } from "./api";
 import { needsSvgRepair, svgStatusLabel } from "./bpmnSvg";
 import { acceptsTestPhase, phaseOptions } from "./testBindings";
 import { E2ePanel, type ReplayRequest, type ScreenView } from "./E2ePanel";
-import { ScreenWorkspace } from "./ScreenWorkspace";
+import { VmScreen } from "./VmScreen";
+
+const DIAGRAM_TAB = "diagram";
 
 type Props = {
   workflow: Row;
@@ -85,17 +87,22 @@ export function BpmnEditor({ workflow, immutable, onSaved, onValidation, onError
   const [, setProcessRevision] = useState(0);
   const [ready, setReady] = useState(false);
   const [screen, setScreen] = useState<ScreenView | null>(null);
-  const [screenOpen, setScreenOpen] = useState(false);
-  // A running test opens the screen by itself; for a finished run a phase click or the button does.
-  const replaying = screen?.at != null;
-  useEffect(() => { if (screen?.active || screen?.focusPhase || replaying) setScreenOpen(true); }, [screen?.active, screen?.focusPhase, replaying]);
-  const showScreen = !!screen && screenOpen;
+  // The diagram and every recorded window of the selected run are tabs above the field (env_ai_dev#8):
+  // one tab fills the field at a time, the replay controls sit in the tab bar and drive all of them.
+  const [tab, setTab] = useState<string>(DIAGRAM_TAB);
+  const [controlsHost, setControlsHost] = useState<HTMLElement | null>(null);
+  const streams = screen?.streams || [];
+  const withTabs = !!screen;
+  const shownStream = streams.find((stream) => stream.id === tab) || null;
+  useEffect(() => { if (tab !== DIAGRAM_TAB && !streams.some((stream) => stream.id === tab)) setTab(DIAGRAM_TAB); }, [tab, streams]);
+  // A phase picked on the panel asks for the machine screen at that phase.
+  useEffect(() => { if (screen?.focusPhase && streams.length) setTab(streams[0].id); }, [screen?.focusPhase]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
-    // The diagram shares the field with the machine screen: refit it whenever the split changes.
+    // The tab bar takes the top of the field: refit the diagram whenever it comes or goes.
     if (!editor.current || !ready) return;
     const canvas = editor.current.get("canvas");
     window.setTimeout(() => { canvas.resized(); canvas.zoom("fit-viewport"); }, 0);
-  }, [showScreen, ready]);
+  }, [withTabs, ready]);
   useEffect(() => { api.testBindings().then(setBindings).catch(() => setBindings([])); }, []);
 
   useEffect(() => {
@@ -202,11 +209,20 @@ export function BpmnEditor({ workflow, immutable, onSaved, onValidation, onError
   const type = selected?.type || "";
   const eventOptions = EVENT_OPTIONS[type] || [];
   const attrs = selected?.businessObject?.$attrs || {};
-  return <div className={`native-bpmn-editor ${immutable ? "readonly" : "editable"} ${showScreen ? "with-screen" : ""}`}>
+  return <div className={`native-bpmn-editor ${immutable ? "readonly" : "editable"} ${withTabs ? "with-tabs" : ""}`}>
+    {withTabs && <nav className="run-tabs" role="tablist" aria-label="Схема і записані вікна прогону">
+      <button role="tab" aria-selected={tab === DIAGRAM_TAB} className={tab === DIAGRAM_TAB ? "active" : ""} onClick={() => setTab(DIAGRAM_TAB)}>Схема BPMN</button>
+      {streams.map((stream) => <button key={stream.id} role="tab" aria-selected={tab === stream.id} className={tab === stream.id ? "active" : ""}
+        title={stream.title} onClick={() => setTab(stream.id)}>
+        {screen?.active && <i className="live-dot" aria-label="наживо" />}{stream.title}
+      </button>)}
+      <div className="run-tabs-controls" ref={setControlsHost} />
+    </nav>}
     <div className="native-bpmn-canvas" ref={container} />
-    {showScreen && screen && <ScreenWorkspace runId={screen.runId} active={screen.active} streams={screen.streams}
-      focusPhase={screen.focusPhase} at={screen.at} onClose={() => setScreenOpen(false)} />}
-    {screen && !screenOpen && <button className="bpmn-screen-show" onClick={() => setScreenOpen(true)}>Показати вікна прогону ({screen.streams.length})</button>}
+    {screen && shownStream && <section className="run-tab-view" role="tabpanel" aria-label={shownStream.title}>
+      <VmScreen key={`${screen.runId}:${shownStream.id}`} runId={screen.runId} active={screen.active} stream={shownStream.id} title={shownStream.title}
+        recording={shownStream.recording} focusPhase={screen.focusPhase} at={screen.at} windowed />
+    </section>}
     {!immutable && <div className="bpmn-save-strip">
       <span>{dirty ? "Є незбережені зміни" : "BPMN XML синхронізовано"}</span>
       <span className={`svg-status ${presentation?.status || "missing"}`}>{svgStatusLabel(presentation)}</span>
@@ -238,7 +254,7 @@ export function BpmnEditor({ workflow, immutable, onSaved, onValidation, onError
       </ul>}
       {workflow.test && dirty && <span>Покриття оновиться після збереження.</span>}
     </aside>}
-    {immutable && ready && workflow.test && <E2ePanel workflow={workflow} viewer={editor.current} onError={onError} onOpenReport={onOpenReport} onScreen={setScreen} replayRequest={replayRequest} />}
+    {immutable && ready && workflow.test && <E2ePanel workflow={workflow} viewer={editor.current} onError={onError} onOpenReport={onOpenReport} onScreen={setScreen} replayRequest={replayRequest} controlsHost={controlsHost} />}
     <datalist id="bpmn-test-phases">{phaseOptions(bindings, processObject()?.$attrs?.["aftertime:testBinding"], processObject()?.id).map((phase) => <option value={phase} key={phase} />)}</datalist>
   </div>;
 }

@@ -29,12 +29,21 @@ export function VmScreen({ runId, active, stream = MAIN, title, focusPhase, at, 
   const [natural, setNatural] = useState<number | null>(null);
   const hasVideo = !active && recording?.status === "ready";
   const second = hasVideo && at != null ? videoTime({ recording }, at) : null;
+  // Under a replay the video follows the replayed moment instead of playing on its own. A seek takes
+  // longer than one replay tick at high speed: a new one before the last has shown its frame kept the
+  // picture black for the whole replay, so the next seek waits for the previous to land (env_ai_dev#8).
+  const target = useRef<number | null>(null);
+  const follow = () => {
+    const element = video.current;
+    if (!element || target.current === null || element.seeking) return;
+    if (Math.abs(element.currentTime - target.current) > 0.2) element.currentTime = target.current;
+  };
   useEffect(() => {
-    // Under a replay the video follows the replayed moment instead of playing on its own.
+    target.current = second;
     if (!video.current || second === null) return;
     video.current.pause();
-    if (Math.abs(video.current.currentTime - second) > 0.2) video.current.currentTime = second;
-  }, [second]);
+    follow();
+  }, [second]); // eslint-disable-line react-hooks/exhaustive-deps
   const [frames, setFrames] = useState<Row[]>([]);
   const [index, setIndex] = useState<number | null>(null);
   const [large, setLarge] = useState(false);
@@ -87,7 +96,7 @@ export function VmScreen({ runId, active, stream = MAIN, title, focusPhase, at, 
     return <div className={`vm-screen ${large ? "large" : ""} ${windowed ? "windowed" : ""}`}>
       {header(<>{at != null ? "Відтворення · " : "Відео · "}{Math.round((recording.duration_ms || 0) / 1000)} с · {recording.frames} кадрів · {((recording.size || 0) / 1024 / 1024).toFixed(1)} МБ</>)}
       {media(<video ref={video} src={api.e2eRecordingUrl(runId, stream)} preload="auto" muted playsInline controls={at == null}
-        style={scaled} onLoadedMetadata={(event) => setNatural(event.currentTarget.videoWidth || null)} />)}
+        style={scaled} onLoadedMetadata={(event) => { setNatural(event.currentTarget.videoWidth || null); follow(); }} onSeeked={follow} />)}
       {at != null && second === null && <span className="muted">Запис цього вікна в цю мить ще не йшов</span>}
     </div>;
   }

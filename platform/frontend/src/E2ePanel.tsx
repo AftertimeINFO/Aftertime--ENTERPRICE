@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { api, type Row } from "./api";
 import { streamsOf, type ScreenStream } from "./ScreenWorkspace";
 import { VmScreen } from "./VmScreen";
@@ -20,10 +21,14 @@ type Props = {
   onScreen?: (screen: ScreenView | null) => void;
   /** Open this run and replay it straight away (from the list of launches). */
   replayRequest?: ReplayRequest | null;
+  /** Where the replay controls go so they stay at hand on every tab of the run (inline when absent). */
+  controlsHost?: HTMLElement | null;
 };
 
+const portalTo = (host: HTMLElement | null | undefined, node: ReactNode) => host ? createPortal(node, host) : node;
+
 /** Runs the end-to-end test bound to a published process and paints its progress on the diagram. */
-export function E2ePanel({ workflow, viewer, onError, onOpenReport, onScreen, replayRequest }: Props) {
+export function E2ePanel({ workflow, viewer, onError, onOpenReport, onScreen, replayRequest, controlsHost }: Props) {
   const versionId = workflow.version.id;
   const [runs, setRuns] = useState<Row[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -194,7 +199,7 @@ export function E2ePanel({ workflow, viewer, onError, onOpenReport, onScreen, re
       {onOpenReport && <button className="link" onClick={() => onOpenReport(reportView.launch.id)}>Звіт</button>}
       <button className="link" onClick={() => setReportView(null)}>✕ до прогону</button>
     </div>}
-    {replay && <div className="replay-controls">
+    {replay && portalTo(controlsHost, <div className="replay-controls">
       <button title="На початок" onClick={() => seek(replay.bounds.start)}>⏮</button>
       <button title={replay.playing ? "Пауза" : "Програти"} onClick={togglePlay}>{replay.playing ? "⏸" : "▶"}</button>
       <button title="Наступна фаза" onClick={nextPhase}>⏭</button>
@@ -204,7 +209,7 @@ export function E2ePanel({ workflow, viewer, onError, onOpenReport, onScreen, re
       <input type="range" min={replay.bounds.start} max={replay.bounds.end} step={500} value={replay.t} onChange={(event) => seek(Number(event.target.value))} />
       <span>{formatOffset(replay.t, replay.bounds)} / {formatOffset(replay.bounds.end, replay.bounds)}</span>
       <button title="Вийти з відтворення" onClick={() => setReplay(null)}>✕</button>
-    </div>}
+    </div>)}
     {run && !reportView && <PrepProgress run={run} at={replay ? replay.t : null} onSkip={seek} />}
     {!!shown?.states?.length && <ol className="e2e-phases">
       {shown.states.map((item: Row) => <li key={item.phase} className={`e2e-${item.state}`} title={item.detail || item.evidence || (replay ? "Перейти до цієї фази" : "Показати екран VM у цій фазі")} onClick={() => replay ? jumpToPhase(item.phase) : setFocusPhase(item.phase)}>

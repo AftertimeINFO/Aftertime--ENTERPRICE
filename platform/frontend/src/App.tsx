@@ -577,12 +577,18 @@ export default function App() {
     setSectionTab(options.tab ?? null);
   };
   const openProcess = async (binding: string, replayRunId?: string) => {
-    // A test either names its own process or follows a path through a shared one (`process` of the binding).
-    const shared = (await api.testBindings().catch(() => [] as Row[])).find((item) => item.id === binding)?.process;
-    const target = processCatalog(w?.workflows || []).find((item) =>
-      shared ? processIdOf(item.bpmn_xml) === shared : item.bpmn_xml?.includes(`aftertime:testBinding="${binding}"`));
-    if (!target) { setError(`Процес із прив'язкою «${binding}» не знайдено`); return; }
-    if (workflow?.version?.id !== target.id) setWorkflow(await api.workflow(target.id));
+    // A run to replay is recorded against one process version: open exactly that one, not whatever
+    // process the binding points to now (a test may have moved to a shared process since, env_ai_dev#8).
+    const recorded = replayRunId ? (await api.e2eRun(replayRunId, 0).catch(() => null))?.workflow_version_id : null;
+    let targetId: string | undefined = recorded || undefined;
+    if (!targetId) {
+      // A test either names its own process or follows a path through a shared one (`process` of the binding).
+      const shared = (await api.testBindings().catch(() => [] as Row[])).find((item) => item.id === binding)?.process;
+      targetId = processCatalog(w?.workflows || []).find((item) =>
+        shared ? processIdOf(item.bpmn_xml) === shared : item.bpmn_xml?.includes(`aftertime:testBinding="${binding}"`))?.id;
+    }
+    if (!targetId) { setError(`Процес із прив'язкою «${binding}» не знайдено`); return; }
+    if (workflow?.version?.id !== targetId) setWorkflow(await api.workflow(targetId));
     setValidation(null);
     setReplayRequest(replayRunId ? { runId: replayRunId, nonce: Date.now() } : null);
     go("process");
