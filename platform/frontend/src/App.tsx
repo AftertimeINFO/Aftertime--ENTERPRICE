@@ -18,6 +18,7 @@ import "@xyflow/react/dist/style.css";
 import { api, type PortContract, type Row, type Workspace } from "./api";
 import { BpmnCollaboration, BpmnEditor } from "./BpmnEditor";
 import { processCatalog, processIdOf } from "./testBindings";
+import { AppTabsBar, MAIN_TAB, ProcessTabPage, loadTabs, saveTabs, type AppTab } from "./AppTabs";
 import { defaultProcess, hasSystemModel, inPack, readStoredPack, selectablePacks, storePack } from "./packs";
 import { ResultsView } from "./ResultsView";
 import { TestsView } from "./TestsView";
@@ -25,6 +26,7 @@ import { ErrorBoundary } from "./ui";
 import { parseRoute, routeHash } from "./testsCatalog";
 
 type Mode = "model" | "process" | "events" | "participants" | "tests" | "results" | "prep";
+const MODE_TITLE: Record<Mode, string> = { model: "Модель", process: "BPMN 2.0", events: "Події", participants: "Учасники та процеси", tests: "Тести", results: "Результати", prep: "Підготовка" };
 const MODES: Mode[] = ["model", "process", "events", "participants", "tests", "results", "prep"];
 import {
   EVENT_ACTION_LABELS,
@@ -161,7 +163,6 @@ export default function App() {
     [packs, setPacks] = useState<Row[]>([]),
     [packId, setPackId] = useState<string>(() => readStoredPack() ?? ""),
     [siteSettings, setSiteSettings] = useState<Row | null>(null),
-    [replayRequest, setReplayRequest] = useState<{ runId: string; nonce: number } | null>(null),
     [mode, setMode] = useState<Mode>(() => (MODES.includes(parseRoute(window.location.hash).section as Mode) ? parseRoute(window.location.hash).section as Mode : "model")),
     [testId, setTestId] = useState<string | null>(() => ["tests", "prep"].includes(parseRoute(window.location.hash).section) ? parseRoute(window.location.hash).id : null),
     [sectionTab, setSectionTab] = useState<string | null>(() => parseRoute(window.location.hash).tab),
@@ -576,11 +577,34 @@ export default function App() {
     setTestId(options.id ?? null);
     setSectionTab(options.tab ?? null);
   };
+  // A test, a process or a replay opens in a tab of its own next to the section (env_ai_dev#8).
+  const [appTabs, setAppTabs] = useState<{ tabs: AppTab[]; active: string }>(loadTabs);
+  useEffect(() => saveTabs(appTabs.tabs, appTabs.active), [appTabs]);
+  // A replay starts when its tab is first shown in this page (a stored tab replays again after a reload).
+  const [replayNonces] = useState(() => new Map<string, number>());
+  const openTab = (tab: AppTab) => setAppTabs((current) => ({
+    tabs: current.tabs.some((item) => item.key === tab.key) ? current.tabs : [...current.tabs, tab],
+    active: tab.key,
+  }));
+  const renameTab = (key: string, title: string) => setAppTabs((current) => ({
+    ...current, tabs: current.tabs.map((item) => item.key === key ? { ...item, title } : item),
+  }));
+  const closeTab = (key: string) => setAppTabs((current) => {
+    const index = current.tabs.findIndex((item) => item.key === key);
+    const tabs = current.tabs.filter((item) => item.key !== key);
+    const active = current.active !== key ? current.active : (tabs[Math.min(index, tabs.length - 1)]?.key || MAIN_TAB);
+    return { tabs, active };
+  });
+  const activateTab = (key: string) => setAppTabs((current) => ({ ...current, active: key }));
+  const openTestTab = (id: string, title?: string) => {
+    openTab({ key: `test:${id}`, kind: "test", title: title || id, testId: id });
+    if (!title) api.test(id).then((item) => renameTab(`test:${id}`, item.title || id)).catch(() => {});
+  };
   const openProcess = async (binding: string, replayRunId?: string) => {
     // A run to replay is recorded against one process version: open exactly that one, not whatever
     // process the binding points to now (a test may have moved to a shared process since, env_ai_dev#8).
-    const recorded = replayRunId ? (await api.e2eRun(replayRunId, 0).catch(() => null))?.workflow_version_id : null;
-    let targetId: string | undefined = recorded || undefined;
+    const recorded = replayRunId ? await api.e2eRun(replayRunId, 0).catch(() => null) : null;
+    let targetId: string | undefined = recorded?.workflow_version_id || undefined;
     if (!targetId) {
       // A test either names its own process or follows a path through a shared one (`process` of the binding).
       const shared = (await api.testBindings().catch(() => [] as Row[])).find((item) => item.id === binding)?.process;
@@ -588,11 +612,19 @@ export default function App() {
         shared ? processIdOf(item.bpmn_xml) === shared : item.bpmn_xml?.includes(`aftertime:testBinding="${binding}"`))?.id;
     }
     if (!targetId) { setError(`Процес із прив'язкою «${binding}» не знайдено`); return; }
-    if (workflow?.version?.id !== targetId) setWorkflow(await api.workflow(targetId));
-    setValidation(null);
-    setReplayRequest(replayRunId ? { runId: replayRunId, nonce: Date.now() } : null);
-    go("process");
+    if (replayRunId) {
+      const when = recorded?.created_at ? new Date(recorded.created_at).toLocaleString("uk-UA", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
+      openTab({ key: `replay:${replayRunId}`, kind: "replay", title: `Програвання: ${binding}${when ? ` · ${when}` : ""}`, versionId: targetId, runId: replayRunId });
+    } else {
+      const name = (w?.workflows || []).find((item: Row) => item.id === targetId)?.name;
+      openTab({ key: `process:${targetId}`, kind: "process", title: name || binding, versionId: targetId });
+    }
   };
+  const replayNonce = (key: string) => {
+    if (!replayNonces.has(key)) replayNonces.set(key, Date.now());
+    return replayNonces.get(key) as number;
+  };
+  const activeTab = appTabs.tabs.find((item) => item.key === appTabs.active) || null;
   const testing = mode === "tests" || mode === "results" || mode === "prep";
   const fullPage = mode === "participants" || testing;
   const currentPack = selectablePacks(packs).find((pack) => pack.id === packId);
@@ -618,7 +650,7 @@ export default function App() {
   if (!w)
     return <div className="loading">MODEL LAB · завантаження… {error}</div>;
   return (
-    <main className={`app-shell ${testing || processOnly ? "reports-shell" : ""}`}>
+    <main className={`app-shell ${testing || processOnly ? "reports-shell" : ""} ${appTabs.tabs.length ? "with-app-tabs" : ""} ${activeTab ? "on-tab-page" : ""}`}>
       <header className="topbar">
         <div className="brand">
           <i />
@@ -628,9 +660,9 @@ export default function App() {
           </span>
         </div>
         <div className="title">
-          <small>{testing ? "НАСКРІЗНЕ ТЕСТУВАННЯ" : "ВИКОНУВАНА МОДЕЛЬ · БЕЗ ТЕРИТОРІЙ"}</small>
+          <small>{activeTab ? "ВКЛАДКА" : testing ? "НАСКРІЗНЕ ТЕСТУВАННЯ" : "ВИКОНУВАНА МОДЕЛЬ · БЕЗ ТЕРИТОРІЙ"}</small>
           <b>
-            {mode === "tests" ? "Тести" : mode === "results" ? "Результати" : mode === "prep" ? "Підготовка стенда" : mode === "process"
+            {activeTab ? activeTab.title : mode === "tests" ? "Тести" : mode === "results" ? "Результати" : mode === "prep" ? "Підготовка стенда" : mode === "process"
               ? workflow?.version?.name || "Process Designer"
               : mode === "participants"
                 ? assembly?.assembly?.name || "Учасники та процеси"
@@ -688,7 +720,7 @@ export default function App() {
             setProjectId(created.project.id);
           }}>＋ Нова модель</button></>}
         </div>
-        <div className="mode-switch">
+        <div className="mode-switch" onClickCapture={() => activateTab(MAIN_TAB)}>
           <button
             className={mode === "model" ? "active" : ""}
             disabled={!hasSystemModel(currentPack)}
@@ -787,6 +819,19 @@ export default function App() {
           <button onClick={() => setError("")}>×</button>
         </div>
       )}
+      {appTabs.tabs.length > 0 && <AppTabsBar mainTitle={MODE_TITLE[mode]} tabs={appTabs.tabs} active={appTabs.active} onActivate={activateTab} onClose={closeTab} />}
+      {appTabs.tabs.map((tab) => <section key={tab.key} className="app-tab-page" hidden={tab.key !== appTabs.active} role="tabpanel" aria-label={tab.title}>
+        <ErrorBoundary key={tab.key}>{tab.kind === "test"
+          ? <TestsView single selectedId={tab.testId} tab={null} onSelect={() => {}} onTab={() => {}} onOpenProcess={openProcess}
+              onOpenLaunch={(launchId) => { setReportLaunchId(launchId); activateTab(MAIN_TAB); go("results", { tab: "reports" }); }}
+              onError={setError} onCloseSingle={() => closeTab(tab.key)} />
+          : <ProcessTabPage versionId={tab.versionId} shown={tab.key === appTabs.active} onError={setError}
+              replay={tab.kind === "replay" ? { runId: tab.runId, nonce: replayNonce(tab.key) } : null}
+              onOpenReport={(launchId) => { setReportLaunchId(launchId); activateTab(MAIN_TAB); go("results", { tab: "reports" }); }}
+              onOpenInSection={(item) => { setWorkflow(item); setValidation(null); activateTab(MAIN_TAB); go("process"); }} />}
+        </ErrorBoundary>
+      </section>)}
+      <div className="main-tab-page" hidden={!!activeTab}>
       <section className={`workbench ${fullPage ? "participant-workbench" : ""} ${processOnly && mode === "process" ? "process-only" : ""}`}>
         {mode === "prep" ? <ErrorBoundary key="prep"><StandPrepView
           caseId={testId}
@@ -800,10 +845,11 @@ export default function App() {
           onOpenProcess={openProcess}
           onOpenLaunch={(launchId) => { setReportLaunchId(launchId); go("results", { tab: "reports" }); }}
           onError={setError}
+          onOpenTest={openTestTab}
         /></ErrorBoundary> : mode === "results" ? <ErrorBoundary key="results"><ResultsView
           tab={sectionTab}
           onTab={(tab) => setSectionTab(tab)}
-          onOpenTest={(id) => go("tests", { id })}
+          onOpenTest={(id) => openTestTab(id)}
           reportLaunchId={reportLaunchId}
           onOpenProcess={openProcess}
           onError={setError}
@@ -926,7 +972,6 @@ export default function App() {
               setReportLaunchId(launchId);
               go("results", { tab: "reports" });
             }}
-            replayRequest={replayRequest}
           /> : <ReactFlow
             onInit={setFlow}
             nodes={nodes}
@@ -1060,6 +1105,7 @@ export default function App() {
         selectedNodeId={selectedId}
         focusNode={focusGraphNode}
       />}
+      </div>
       {busy && <div className="busy">ОБРОБКА…</div>}
     </main>
   );

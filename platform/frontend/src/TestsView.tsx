@@ -17,12 +17,17 @@ type Props = {
   onOpenProcess: (binding: string, replayRunId?: string) => void;
   onOpenLaunch: (launchId: string) => void;
   onError: (message: string) => void;
+  /** A click on a test opens it in a tab of its own (env_ai_dev#8) instead of the card under the list. */
+  onOpenTest?: (id: string, title: string) => void;
+  /** Only the card of ``selectedId``: the page of a test tab. */
+  single?: boolean;
+  onCloseSingle?: () => void;
 };
 
 const SORTS: [TestSort, string][] = [["attention", "Спершу проблемні"], ["name", "За назвою"], ["recent", "Нещодавні"], ["stability", "Найменш стабільні"]];
 
 /** The whole end-to-end test suite: browse, filter, look into a test, run what is needed. */
-export function TestsView({ selectedId, tab, onSelect, onTab, onOpenProcess, onOpenLaunch, onError }: Props) {
+export function TestsView({ selectedId, tab, onSelect, onTab, onOpenProcess, onOpenLaunch, onError, onOpenTest, single, onCloseSingle }: Props) {
   const [tests, setTests] = useState<Row[] | null>(null);
   const [retired, setRetired] = useState(false);
   const [filters, setFilters] = useState<TestFilters>({ query: "", suite: "", statuses: [], flakyOnly: false });
@@ -82,6 +87,14 @@ export function TestsView({ selectedId, tab, onSelect, onTab, onOpenProcess, onO
   }));
   const allChosen = visible.length > 0 && visible.every((test) => chosen.includes(test.id));
 
+  if (single && selectedId) return <div className="ux tests-view single">
+    {notice && <div className="ux-notice" role="status">{notice}<button className="link" onClick={() => setNotice("")}>закрити</button></div>}
+    {runBlocked && <p className="muted">{runBlocked}</p>}
+    <TestCard id={selectedId} runBlocked={runBlocked} onClose={() => onCloseSingle?.()} onRun={async (cases, title) => {
+      try { await api.startCenterRun({ cases, title }); setNotice(`«${title}» поставлено в чергу стенда`); load(); } catch (error) { onError(String(error)); }
+    }} onOpenProcess={onOpenProcess} onError={onError} />
+  </div>;
+
   return <div className="ux tests-view">
     <header className="ux-header">
       <div>
@@ -132,7 +145,7 @@ export function TestsView({ selectedId, tab, onSelect, onTab, onOpenProcess, onO
             : !visible.length ? <EmptyState title="Немає тестів за цими умовами">Змініть пошук або фільтри.</EmptyState>
             : visible.map((test) => <div key={test.id} data-test={test.id} role="row"
               className={`tests-row ${test.id === selectedId ? "selected" : ""} ${test.active ? "" : "retired"}`}
-              onClick={() => onSelect(test.id === selectedId ? null : test.id)}>
+              onClick={() => onOpenTest ? onOpenTest(test.id, test.title) : onSelect(test.id === selectedId ? null : test.id)}>
               <span onClick={(event) => event.stopPropagation()}>
                 <input type="checkbox" aria-label={`Вибрати ${test.title}`} checked={chosen.includes(test.id)}
                   onChange={() => setChosen((current) => current.includes(test.id) ? current.filter((id) => id !== test.id) : [...current, test.id])} />
