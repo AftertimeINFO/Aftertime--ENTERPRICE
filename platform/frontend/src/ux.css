@@ -291,3 +291,22 @@
 .process-tab-head button { margin-left: auto; }
 .process-tab-loading { padding: 20px; color: #9fb3ab; }
 .app-shell.on-tab-page .topbar .title b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* The E2E panel over the process: nothing wider than the panel, a grip to move it, a corner to resize it (env_ai_dev#8) */
+.e2e-panel { display: flex; flex-direction: column; gap: 0; padding: 0; overflow: hidden; }
+.e2e-panel-grip { display: flex; flex: none; align-items: center; gap: 8px; padding: 6px 12px; border-bottom: 1px solid #315147;
+  background: #10241e; cursor: grab; user-select: none; touch-action: none; }
+.e2e-panel-grip:active { cursor: grabbing; }
+.e2e-panel-grip small { flex: 1; min-width: 0; overflow: hidden; color: #64d8cb; letter-spacing: .08em; text-overflow: ellipsis; white-space: nowrap; }
+.e2e-panel-body { display: grid; flex: 1 1 auto; align-content: start; gap: 8px; min-height: 0; padding: 10px 14px 16px; overflow-x: hidden; overflow-y: auto; }
+.e2e-panel-body > * { min-width: 0; }
+.e2e-panel.placed .e2e-runs { max-height: none; }
+.e2e-panel header { flex-wrap: wrap; }
+.e2e-panel header select { flex: 1 1 160px; min-width: 0; max-width: 100%; text-overflow: ellipsis; }
+.e2e-panel header button { flex: none; }
+.e2e-panel .replay-controls { flex-wrap: nowrap; }
+.e2e-panel .replay-controls input[type=range] { flex: 1 1 60px; min-width: 40px; }
+.e2e-panel .e2e-log { overflow-x: hidden; word-break: break-word; }
+.e2e-panel .e2e-runs li { min-width: 0; }
+.e2e-panel-resize { position: absolute; right: 0; bottom: 0; z-index: 2; width: 18px; height: 18px; cursor: nwse-resize; touch-action: none;
+  background: linear-gradient(135deg, transparent 50%, #64d8cb 50%, #64d8cb 58%, transparent 58%, transparent 70%, #64d8cb 70%, #64d8cb 78%, transparent 78%); }

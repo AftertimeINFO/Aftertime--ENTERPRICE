@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type PointerEvent } from "react";
 import { api, type Row } from "./api";
 import { streamsOf, type ScreenStream } from "./ScreenWorkspace";
 import { VmScreen } from "./VmScreen";
@@ -179,9 +179,15 @@ export function E2ePanel({ workflow, viewer, onError, onOpenReport, onScreen, re
   };
 
   const activeRun = runs.find(isActive);
-  return <aside className="e2e-panel">
-    <header>
+  const { panel, frame, beginDrag, followDrag, endDrag, resetFrame } = usePanelFrame();
+  return <aside className={`e2e-panel ${frame ? "placed" : ""}`} ref={panel} style={frame ? { left: frame.left, top: frame.top, width: frame.width, height: frame.height, bottom: "auto", maxHeight: "none" } : undefined}>
+    <div className="e2e-panel-grip" title="Перетягніть, щоб перемістити панель; кут праворуч унизу змінює розмір" onPointerDown={(event) => beginDrag(event, "move")}
+      onPointerMove={followDrag} onPointerUp={endDrag} onPointerCancel={endDrag} onDoubleClick={resetFrame}>
       <small>E2E-ТЕСТ · {workflow.test.title}</small>
+      {frame && <button className="link" title="Повернути панель на місце й до початкового розміру" onPointerDown={(event) => event.stopPropagation()} onClick={resetFrame}>на місце</button>}
+    </div>
+    <div className="e2e-panel-body">
+    <header>
       {tests.length > 1 && !isActive(run) && <select value={chosenTest?.binding || ""} onChange={(event) => setTestId(event.target.value)}>
         {tests.map((item: Row) => <option key={item.binding} value={item.binding}>{item.title}</option>)}
       </select>}
@@ -238,5 +244,75 @@ export function E2ePanel({ workflow, viewer, onError, onOpenReport, onScreen, re
         </li>)}
       </ul>
     </details>}
+    </div>
+    <span className="e2e-panel-resize" role="presentation" title="Змінити розмір панелі"
+      onPointerDown={(event) => beginDrag(event, "resize")} onPointerMove={followDrag} onPointerUp={endDrag} onPointerCancel={endDrag} />
   </aside>;
+}
+
+type Frame = { left: number; top: number; width: number; height: number };
+const FRAME_KEY = "aftertime.e2e-panel-frame";
+const MIN_W = 300;
+const MIN_H = 180;
+
+function loadFrame(): Frame | null {
+  try {
+    const value = JSON.parse(window.localStorage.getItem(FRAME_KEY) || "null");
+    return value && ["left", "top", "width", "height"].every((key) => Number.isFinite(value[key])) ? value : null;
+  } catch { return null; }
+}
+
+/** Keeps the panel inside the field it floats over. */
+function clampFrame(frame: Frame, area: DOMRect | undefined): Frame {
+  if (!area) return frame;
+  const width = Math.max(MIN_W, Math.min(frame.width, area.width - 8));
+  const height = Math.max(MIN_H, Math.min(frame.height, area.height - 8));
+  return {
+    width, height,
+    left: Math.max(0, Math.min(frame.left, area.width - width)),
+    top: Math.max(0, Math.min(frame.top, area.height - height)),
+  };
+}
+
+/** The panel can be moved by its grip and resized by its corner (env_ai_dev#8); the place is remembered. */
+function usePanelFrame() {
+  const panel = useRef<HTMLElement | null>(null);
+  const [frame, setFrame] = useState<Frame | null>(loadFrame);
+  const drag = useRef<{ mode: "move" | "resize"; x: number; y: number; start: Frame } | null>(null);
+  const area = () => panel.current?.offsetParent?.getBoundingClientRect();
+  useEffect(() => {
+    try {
+      if (frame) window.localStorage.setItem(FRAME_KEY, JSON.stringify(frame));
+      else window.localStorage.removeItem(FRAME_KEY);
+    } catch { /* not kept: fine */ }
+  }, [frame]);
+  useEffect(() => {
+    // A stored place from a bigger window is pulled back into this one.
+    if (frame) setFrame((current) => current && clampFrame(current, area()));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const beginDrag = (event: PointerEvent, mode: "move" | "resize") => {
+    if (event.button !== 0 || !panel.current) return;
+    if (mode === "move" && (event.target as HTMLElement).closest("button, select, input, a")) return;
+    event.preventDefault();
+    event.stopPropagation();
+    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+    const box = panel.current.getBoundingClientRect();
+    const field = area();
+    const start = { left: box.left - (field?.left || 0), top: box.top - (field?.top || 0), width: box.width, height: box.height };
+    drag.current = { mode, x: event.clientX, y: event.clientY, start };
+    setFrame(start);
+  };
+  const followDrag = (event: PointerEvent) => {
+    const current = drag.current;
+    if (!current) return;
+    const dx = event.clientX - current.x;
+    const dy = event.clientY - current.y;
+    const { start } = current;
+    setFrame(clampFrame(current.mode === "move"
+      ? { ...start, left: start.left + dx, top: start.top + dy }
+      : { ...start, width: start.width + dx, height: start.height + dy }, area()));
+  };
+  const endDrag = () => { drag.current = null; };
+  const resetFrame = () => setFrame(null);
+  return { panel, frame, beginDrag, followDrag, endDrag, resetFrame };
 }
