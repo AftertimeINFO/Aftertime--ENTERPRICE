@@ -46,7 +46,7 @@ export function AppTabsBar({ mainTitle, tabs, active, onActivate, onClose }: Bar
     <button role="tab" aria-selected={active === MAIN_TAB} className={`app-tab main ${active === MAIN_TAB ? "active" : ""}`} onClick={() => onActivate(MAIN_TAB)}>
       {mainTitle}
     </button>
-    {tabs.map((tab) => <span key={tab.key} className={`app-tab ${tab.kind} ${active === tab.key ? "active" : ""}`}
+    {tabs.map((tab) => <span key={tab.key} className={`app-tab kind-${tab.kind} ${active === tab.key ? "active" : ""}`}
       onAuxClick={(event) => { if (event.button === 1) onClose(tab.key); }}>
       <button role="tab" aria-selected={active === tab.key} title={tab.title} onClick={() => onActivate(tab.key)}>
         <i aria-hidden="true">{ICON[tab.kind]}</i>{tab.title}
