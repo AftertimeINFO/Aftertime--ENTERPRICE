@@ -23,6 +23,7 @@ import time
 from pathlib import Path
 
 from e2e_bridge.center import Center, CenterError
+from e2e_bridge.local_center import LocalCenter
 from e2e_bridge.runner import Settings, folder_states, follow, load_bindings
 from e2e_bridge.results import Uploader, sync
 from e2e_bridge.service import Aftertime, serve
@@ -74,7 +75,8 @@ def _dispatch(args: argparse.Namespace) -> int:
     directory = config_dir()
     settings = Settings.load(directory)
     bindings = load_bindings(directory, settings.packs_dir or directory.parent)
-    center = Center(settings.center_url)
+    # RUN_ALL in bridge.env: the bridge launches the stand's run-all.ps1 itself; otherwise an external control center (CENTER_URL).
+    center = LocalCenter(settings.run_all, settings.jobs_dir) if settings.run_all else Center(settings.center_url)
 
     if args.command == "import-results":
         uploader = Uploader(settings.aftertime_url)
@@ -96,7 +98,7 @@ def _dispatch(args: argparse.Namespace) -> int:
         return 0
 
     if args.command == "status":
-        emit({"type": "center", "url": settings.center_url, **center.busy(),
+        emit({"type": "center", "url": settings.center_url or str(settings.run_all), **center.busy(),
               "bindings": {key: value.cases for key, value in bindings.items()}})
         return 0
 

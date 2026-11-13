@@ -63,6 +63,8 @@ class Settings:
     live_command: str = ""
     poll_seconds: float = 5
     live_seconds: float = 20
+    run_all: Path | None = None
+    jobs_dir: Path | None = None
 
     @classmethod
     def load(cls, config_dir: Path) -> "Settings":
@@ -88,6 +90,8 @@ class Settings:
             live_command=values.get("LIVE_COMMAND", ""),
             poll_seconds=float(values.get("POLL_SECONDS", 5)),
             live_seconds=float(values.get("LIVE_SECONDS", 20)),
+            run_all=Path(values["RUN_ALL"]) if values.get("RUN_ALL") else None,
+            jobs_dir=Path(values["JOBS_DIR"]) if values.get("JOBS_DIR") else None,
         )
 
 

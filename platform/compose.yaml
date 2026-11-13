@@ -64,7 +64,7 @@ services:
       timeout: 3s
       retries: 20
     ports:
-      - "8000:8000"
+      - "${AFTERTIME_API_PORT:-8000}:8000"
     restart: unless-stopped
 
   worker:
