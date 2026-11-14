@@ -41,6 +41,15 @@ export function runStatusLabel(run: Row | undefined): string {
   return isSimulation(run) ? `Симуляція (тест не виконувався) · ${label}` : label;
 }
 
+/** The configuration of the stand a run was executed on, as the bridge read it ("" if it was not read). */
+export function standLabel(run: Row | undefined): string {
+  const stand = run?.stand;
+  if (!stand) return "";
+  if (!stand.version) return stand.error ? "Версію конфігурації не прочитано" : "";
+  const end = stand.end?.version;
+  return stand.changed && end ? `Конфігурація ${stand.version} → ${end} (змінилась під час прогону)` : `Конфігурація ${stand.version}`;
+}
+
 export function phaseSummary(run: Row | undefined): string {
   const states = run?.states || [];
   const passed = states.filter((item: Row) => item.state === "passed").length;

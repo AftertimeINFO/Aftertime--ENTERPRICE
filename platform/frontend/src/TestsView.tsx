@@ -3,7 +3,7 @@ import { api, type Row } from "./api";
 import { formatDuration } from "./reports";
 import { LaunchPanel } from "./LaunchPanel";
 import { TestDetail } from "./ReportsView";
-import { isActive, runStatusLabel } from "./e2eRun";
+import { isActive, runStatusLabel, standLabel } from "./e2eRun";
 import {
   STATUS_VIEW, filterTests, percent, relativeTime, routeHash, sortTests, suitesOf, type TestFilters, type TestSort,
 } from "./testsCatalog";
@@ -222,11 +222,12 @@ function TestCard({ id, runBlocked, onClose, onRun, onOpenProcess, onError }: {
       </tr>)}</tbody>
     </table> : <EmptyState title="Історії ще немає" />)}
     {view === "runs" && (test.aftertime_runs?.length ? <table className="ux-table">
-      <thead><tr><th>Коли</th><th>Як запущено</th><th>Стан</th><th>Відео</th><th /></tr></thead>
+      <thead><tr><th>Коли</th><th>Як запущено</th><th>Стан</th><th>Конфігурація</th><th>Відео</th><th /></tr></thead>
       <tbody>{test.aftertime_runs.map((item: Row) => <tr key={item.id}>
         <td>{new Date(item.created_at).toLocaleString("uk-UA")}</td>
         <td>{item.kind === "binding" ? `процес ${item.binding}` : item.target?.title || "набір"}</td>
         <td>{runStatusLabel(item)}</td>
+        <td>{item.stand?.version ? (item.stand.changed ? `${item.stand.version} → ${item.stand.end?.version}` : item.stand.version) : "—"}</td>
         <td>{item.recording === "ready" ? "є" : item.recording === "packing" ? "пакується" : "—"}</td>
         <td>{item.kind === "binding" && !isActive(item) && <button onClick={() => onOpenProcess(item.binding, item.id)}>▶ Програти</button>}</td>
       </tr>)}</tbody>

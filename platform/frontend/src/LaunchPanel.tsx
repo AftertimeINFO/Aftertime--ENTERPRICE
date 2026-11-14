@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type Row } from "./api";
-import { isActive, runStatusLabel } from "./e2eRun";
+import { isActive, runStatusLabel, standLabel } from "./e2eRun";
 import { ScreenWorkspace, streamsOf } from "./ScreenWorkspace";
 import { formatOffset, replayBounds } from "./replay";
 import { PrepProgress } from "./PrepProgress";
@@ -126,6 +126,7 @@ export function LaunchPanel({ onOpenLaunch, onError, onReplayProcess }: Props) {
       {current ? <>
         <b>{launchTitle(current)}</b>
         <span className={`e2e-status ${current.status}`}>{runStatusLabel(current)}</span>
+        {standLabel(current) && <span className="muted">{standLabel(current)}</span>}
         {progress && <>
           <div className="progress"><span style={{ width: `${progress.pct}%` }} /></div>
           <span className="muted">{progress.text}</span>
@@ -195,6 +196,7 @@ export function LaunchPanel({ onOpenLaunch, onError, onReplayProcess }: Props) {
         <td>{new Date(run.created_at).toLocaleString("uk-UA")}</td>
         <td>{launchTitle(run)}</td>
         <td className={`e2e-status ${run.status}`}>{runStatusLabel(run)}</td>
+        <td className="muted">{standLabel(run)}</td>
         <td>{!isActive(run) && <button title="Програти виконаний тест" onClick={() => {
           if (run.kind === "binding" && run.binding && onReplayProcess) onReplayProcess(run.binding, run.id);
           else setViewId(run.id);

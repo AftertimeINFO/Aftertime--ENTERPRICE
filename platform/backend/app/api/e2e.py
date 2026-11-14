@@ -60,6 +60,7 @@ def _summary(run: LabE2eRun) -> dict[str, Any]:
         "timeline": run.timeline or [],
         "recording": run.recording,
         "streams": stream_list(run),
+        "stand": run.stand,
     }
 
 
@@ -414,6 +415,24 @@ def _apply(run: LabE2eRun, event: dict[str, Any], kind: Any, now: datetime) -> N
         run.status = "error"
         run.error = str(event.get("message", ""))
         run.finished_at = now
+    elif kind == "stand":
+        run.stand = merge_stand(run.stand, event, now)
+
+
+def merge_stand(current: dict[str, Any] | None, event: dict[str, Any], now: datetime) -> dict[str, Any] | None:
+    """The stand a run was executed on: the first reading stays, a later one is its end; a differing end is a change.
+
+    ``event``: {"type": "stand", "version": "1.75.0.2", "source": "...", "error": "..."}.
+    """
+    reading = {key: event[key] for key in ("version", "source", "error") if event.get(key)}
+    if not reading:
+        return current
+    reading["at"] = now.isoformat()
+    if not current:
+        return reading
+    end = {key: reading[key] for key in ("version", "error", "at") if key in reading}
+    changed = bool(current.get("version") and reading.get("version") and reading["version"] != current["version"])
+    return {**current, "end": end, "changed": changed}
 
 
 @router.post("/e2e-runs/{run_id}/events")

@@ -65,6 +65,8 @@ class Settings:
     live_seconds: float = 20
     run_all: Path | None = None
     jobs_dir: Path | None = None
+    # Prints the stand under test as JSON ({"version": "1.75.0.2", "source": "..."}): kept with every run.
+    stand_command: str = ""
 
     @classmethod
     def load(cls, config_dir: Path) -> "Settings":
@@ -92,6 +94,7 @@ class Settings:
             live_seconds=float(values.get("LIVE_SECONDS", 20)),
             run_all=Path(values["RUN_ALL"]) if values.get("RUN_ALL") else None,
             jobs_dir=Path(values["JOBS_DIR"]) if values.get("JOBS_DIR") else None,
+            stand_command=values.get("STAND_COMMAND", ""),
         )
 
 
@@ -186,6 +189,28 @@ def live_entries(command: str, since: datetime) -> list[tuple[str, str]]:
     if isinstance(data, dict):
         data = [data]
     return [(item.get("name", ""), item.get("text", "")) for item in data if isinstance(item, dict)]
+
+
+def read_stand(command: str, timeout: float = 60) -> dict[str, str] | None:
+    """The stand under test from a settings-provided command (``STAND_COMMAND``), or None without one.
+
+    The command prints ``{"version": "...", "source": "..."}``; a failure is kept as ``{"error": "..."}``,
+    so a run never silently lacks its version.
+    """
+    if not command:
+        return None
+    try:
+        result = subprocess.run(command, shell=True, capture_output=True, text=True,
+                                encoding="utf-8", errors="replace", timeout=timeout)
+        data = json.loads(result.stdout.strip() or "{}")
+    except subprocess.TimeoutExpired:
+        return {"error": f"STAND_COMMAND не відповів за {timeout:.0f} с"}
+    except (subprocess.SubprocessError, OSError, json.JSONDecodeError) as exc:
+        return {"error": f"STAND_COMMAND: {exc}"[:300]}
+    if not isinstance(data, dict):
+        return {"error": "STAND_COMMAND повернув не об'єкт JSON"}
+    stand = {key: str(data[key])[:300] for key in ("version", "source", "error") if data.get(key)}
+    return stand or {"error": (result.stderr or "STAND_COMMAND нічого не повернув").strip()[:300]}
 
 
 def follow(

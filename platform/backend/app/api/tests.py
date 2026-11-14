@@ -50,7 +50,7 @@ def get_test(test_id: str, db: Session = Depends(get_db)) -> dict[str, Any]:
         if (test_id in (target.get("cases") or [])) or (suite_ids & set(target.get("suites") or [])) or (binding and run.binding == binding):
             runs.append({"id": run.id, "kind": run.kind, "status": run.status, "created_at": run.created_at,
                          "finished_at": run.finished_at, "binding": run.binding, "target": target,
-                         "recording": (run.recording or {}).get("status")})
+                         "recording": (run.recording or {}).get("status"), "stand": run.stand})
         if len(runs) >= 20:
             break
     return {**summarize_test(row, history, binding), "first_seen": row.first_seen, "last_seen": row.last_seen,

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type PointerEvent } from "rea
 import { api, type Row } from "./api";
 import { streamsOf, type ScreenStream } from "./ScreenWorkspace";
 import { VmScreen } from "./VmScreen";
-import { E2E_MARKERS, elementMarkers, isActive, phaseSummary, runStatusLabel } from "./e2eRun";
+import { E2E_MARKERS, elementMarkers, isActive, phaseSummary, runStatusLabel, standLabel } from "./e2eRun";
 import { formatOffset, phaseMoments, replayBounds, replayStates, type Bounds } from "./replay";
 import { PrepProgress } from "./PrepProgress";
 
@@ -194,7 +194,7 @@ export function E2ePanel({ workflow, viewer, onError, onOpenReport, onScreen, re
       {isActive(run) ? <button onClick={stop} disabled={run?.stop_requested}>{run?.stop_requested ? "Зупиняється…" : "Зупинити"}</button>
         : <button onClick={start} disabled={!(tests.length > 1 ? chosenTest?.covered : workflow.test.covered) || !!activeRun}>Запустити тест</button>}
     </header>
-    <div className={`e2e-status ${shown?.status || "none"}`}>{replay ? "Відтворення · " : reportView ? "Зі звіту · " : ""}{runStatusLabel(shown)}{shown ? ` · ${phaseSummary(shown)}` : ""}</div>
+    <div className={`e2e-status ${shown?.status || "none"}`}>{replay ? "Відтворення · " : reportView ? "Зі звіту · " : ""}{runStatusLabel(shown)}{shown ? ` · ${phaseSummary(shown)}` : ""}{standLabel(shown) ? ` · ${standLabel(shown)}` : ""}</div>
     {reportView && <div className="report-view-note">
       <span>Результат {new Date(reportView.start).toLocaleString("uk-UA")}{reportView.message ? ` — ${reportView.message.slice(0, 160)}` : ""}</span>
       {onOpenReport && <button className="link" onClick={() => onOpenReport(reportView.launch.id)}>Звіт</button>}
@@ -225,6 +225,7 @@ export function E2ePanel({ workflow, viewer, onError, onOpenReport, onScreen, re
       {runs.map((item) => <li key={item.id} className={item.id === selectedId ? "selected" : ""}>
         <button className="link" onClick={() => setSelectedId(item.id)}>{new Date(item.created_at).toLocaleString("uk-UA")}</button>
         <span className={`e2e-status ${item.status}`}>{runStatusLabel(item)}</span>
+        {standLabel(item) && <small className="muted">{standLabel(item)}</small>}
         {item.parent_id && <small className="muted" title={item.target?.title || ""}>у складі набору</small>}
         {!isActive(item) && <button title="Програти виконаний тест: фази на BPMN і записані вікна в часі" onClick={() => {
           if (item.id === selectedId && run) startReplay(run);

@@ -465,6 +465,9 @@ class LabE2eRun(Base):
     # Recorded windows by id: {"screen": {"title", "order", "recording": {...}}, "web": {...}};
     # ``recording`` above mirrors the main window ("screen") for older clients.
     streams: Mapped[dict | None] = mapped_column(JSONB)
+    # The stand under test as the bridge read it when the run began and when it ended:
+    # {"version": "1.75.0.2", "source": "...", "at": iso, "end": {"version", "at"}, "changed": bool}.
+    stand: Mapped[dict | None] = mapped_column(JSONB)
     binding: Mapped[str] = mapped_column(String(120))
     status: Mapped[str] = mapped_column(String(20), default="queued", index=True)
     center_job_id: Mapped[str | None] = mapped_column(String(80))

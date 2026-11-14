@@ -14,7 +14,7 @@ from typing import Any, Callable
 from e2e_bridge.center import Center, CenterError
 from e2e_bridge.phases import PASSED, Proof, changes, phase_states, read_proofs
 from e2e_bridge.results import Uploader, launches_since, newest_launch_for
-from e2e_bridge.runner import MAIN_SCREEN, Binding, Screen, Settings, follow, live_entries
+from e2e_bridge.runner import MAIN_SCREEN, Binding, Screen, Settings, follow, live_entries, read_stand
 from e2e_bridge.screen import ScreenRecorder
 
 
@@ -177,6 +177,17 @@ class Screens:
                                                   f"{'передано, пакується у фоні' if recorder.recorded else 'не отримано'}"})
 
 
+def report_stand(settings: Settings, sink: Callable[[dict], None], when: str) -> dict[str, str] | None:
+    """Read the stand under test (its configuration version) and keep it with the run; ``when``: start | end."""
+    stand = read_stand(settings.stand_command)
+    if stand is None:
+        return None
+    sink({"type": "stand", **stand})
+    text = f"конфігурація {stand['version']}" if stand.get("version") else f"версію не прочитано: {stand.get('error', '')}"
+    sink({"type": "log", "line": f"Aftertime: стенд ({'початок' if when == 'start' else 'кінець'}) — {text}"})
+    return stand
+
+
 CASE_LINE = re.compile(r"CASE\|(start|end)\|([A-Za-z0-9][\w.-]*)(?:\|(\w+))?")
 CASE_OUTCOMES = {"passed": "passed", "failed": "failed", "skipped": "stopped", "timedOut": "failed", "interrupted": "stopped"}
 
@@ -245,6 +256,7 @@ class CaseRuns:
             "baseline": {name for name, _ in live_entries(self.settings.live_command, since)} if use_live else set(),
         }
         sink({"type": "states", "states": self.current["states"]})
+        report_stand(self.settings, sink, "start")
 
     def tick(self) -> None:
         """Live proofs of the running test, at most every ``live_seconds``."""
@@ -269,6 +281,7 @@ class CaseRuns:
         final = phase_states(binding.phases, current["proofs"], outcome)
         for item in changes(current["states"], final):
             current["sink"]({"type": "phase", **item})
+        report_stand(self.settings, current["sink"], "end")
         current["sink"]({"type": "finished", "status": outcome, "folder": None, "states": final})
 
         def close() -> None:
@@ -324,6 +337,7 @@ def execute(
         return
     cases = CaseRuns(sink.aftertime, run["id"], bindings, settings, sink.echo) if suite else None
     outcome = "error"
+    report_stand(settings, sink, "start")
     try:
         busy = center.busy()
         job_id = center.run(binding.cases, f"Aftertime · {binding.title}", suites=list(target.get("suites") or []),
@@ -339,6 +353,7 @@ def execute(
         screens.close()
         if cases:
             cases.close(outcome)
+        report_stand(settings, sink, "end")
     import_report(settings, binding, run["id"], started, sink, every_launch=run.get("kind") == "center")
 
 

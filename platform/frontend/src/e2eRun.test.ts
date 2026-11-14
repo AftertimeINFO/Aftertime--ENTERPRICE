@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
 
-import { elementMarkers, isActive, phaseSummary, runStatusLabel } from "./e2eRun";
+import { elementMarkers, isActive, phaseSummary, runStatusLabel, standLabel } from "./e2eRun";
+
+describe("standLabel", () => {
+  it("names the configuration the run was executed on", () => {
+    expect(standLabel({ stand: { version: "1.75.0.2" } })).toBe("Конфігурація 1.75.0.2");
+    expect(standLabel({ stand: { version: "1.75.0.2", end: { version: "1.75.0.3" }, changed: true } }))
+      .toBe("Конфігурація 1.75.0.2 → 1.75.0.3 (змінилась під час прогону)");
+    expect(standLabel({ stand: { error: "down" } })).toBe("Версію конфігурації не прочитано");
+    expect(standLabel({ status: "passed" })).toBe("");
+  });
+});
 
 const nodes = [
   { node_key: "start", block_type: "start_event" },
