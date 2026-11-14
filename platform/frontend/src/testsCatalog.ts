@@ -11,7 +11,9 @@ export const STATUS_VIEW: Record<string, { icon: string; label: string }> = {
 };
 
 export type TestFilters = { query: string; suite: string; statuses: string[]; flakyOnly: boolean };
-export type TestSort = "attention" | "name" | "recent" | "stability";
+export type TestSort = "attention" | "name" | "recent" | "duration" | "trend" | "stability";
+/** A sort and its direction: ``reversed`` turns the natural order of the sort around (env_ai_dev#24). */
+export type SortState = { sort: TestSort; reversed: boolean };
 
 const ATTENTION: Record<string, number> = { failed: 0, broken: 1, unknown: 3, skipped: 4, never: 5, passed: 6 };
 
@@ -24,16 +26,35 @@ export function filterTests(tests: Row[], filters: TestFilters): Row[] {
     && (!filters.flakyOnly || test.flaky));
 }
 
-/** "attention" puts what needs a look first: failures, then flaky tests, then the rest. */
-export function sortTests(tests: Row[], sort: TestSort): Row[] {
+/** Share of the recent runs (``trend``) that did not pass; a test without runs counts as none failed. */
+export function trendFailures(test: Row): number {
+  const trend: string[] = test.trend || [];
+  return trend.length ? trend.filter((status) => status !== "passed").length / trend.length : -1;
+}
+
+/**
+ * "attention" puts what needs a look first: failures, then flaky tests, then the rest.
+ * Natural orders: name A-Я, the latest run first, the longest run first, the most failures among the
+ * recent runs first, the least stable first. ``reversed`` turns the order around; ties stay by name.
+ */
+export function sortTests(tests: Row[], sort: TestSort, reversed = false): Row[] {
   const byName = (left: Row, right: Row) => String(left.title).localeCompare(String(right.title), "uk");
   const started = (test: Row) => (test.last?.start ? Date.parse(test.last.start) : 0);
-  const sorted = [...tests];
-  if (sort === "name") return sorted.sort(byName);
-  if (sort === "recent") return sorted.sort((left, right) => started(right) - started(left) || byName(left, right));
-  if (sort === "stability") return sorted.sort((left, right) => (left.pass_rate ?? 2) - (right.pass_rate ?? 2) || byName(left, right));
-  return sorted.sort((left, right) =>
-    (ATTENTION[left.status] ?? 9) - (ATTENTION[right.status] ?? 9) || Number(right.flaky) - Number(left.flaky) || byName(left, right));
+  const lasted = (test: Row) => (typeof test.last?.duration_ms === "number" ? test.last.duration_ms : -1);
+  const key: (left: Row, right: Row) => number =
+    sort === "name" ? () => 0
+    : sort === "recent" ? (left, right) => started(right) - started(left)
+    : sort === "duration" ? (left, right) => lasted(right) - lasted(left)
+    : sort === "trend" ? (left, right) => trendFailures(right) - trendFailures(left)
+    : sort === "stability" ? (left, right) => (left.pass_rate ?? 2) - (right.pass_rate ?? 2)
+    : (left, right) => (ATTENTION[left.status] ?? 9) - (ATTENTION[right.status] ?? 9) || Number(right.flaky) - Number(left.flaky);
+  const direction = reversed ? -1 : 1;
+  return [...tests].sort((left, right) => direction * key(left, right) || direction * byName(left, right));
+}
+
+/** A click on the header of a column: the same column turns its order around, another one starts in its natural order. */
+export function nextSort(current: SortState, sort: TestSort): SortState {
+  return current.sort === sort ? { sort, reversed: !current.reversed } : { sort, reversed: false };
 }
 
 export function suitesOf(tests: Row[]): Row[] {

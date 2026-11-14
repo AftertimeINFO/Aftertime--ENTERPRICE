@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { filterTests, parseRoute, percent, relativeTime, routeHash, sortTests, suitesOf } from "./testsCatalog";
+import { filterTests, nextSort, parseRoute, percent, relativeTime, routeHash, sortTests, suitesOf, trendFailures } from "./testsCatalog";
 
 const tests = [
-  { id: "a", title: "Видача", status: "passed", flaky: false, pass_rate: 1, suites: [{ id: "issue" }], last: { start: "2026-11-04T10:00:00Z", message: "" } },
-  { id: "b", title: "Повернення", status: "failed", flaky: false, pass_rate: 0.4, suites: [{ id: "chains" }], last: { start: "2026-11-04T08:00:00Z", message: "TARIFF MISMATCH" } },
-  { id: "c", title: "Застава", status: "passed", flaky: true, pass_rate: 0.6, suites: [{ id: "chains" }, { id: "issue" }], last: null },
+  { id: "a", title: "Видача", status: "passed", flaky: false, pass_rate: 1, suites: [{ id: "issue" }], trend: ["passed", "passed"], last: { start: "2026-11-04T10:00:00Z", duration_ms: 60_000, message: "" } },
+  { id: "b", title: "Повернення", status: "failed", flaky: false, pass_rate: 0.4, suites: [{ id: "chains" }], trend: ["failed", "passed", "failed"], last: { start: "2026-11-04T08:00:00Z", duration_ms: 900_000, message: "TARIFF MISMATCH" } },
+  { id: "c", title: "Застава", status: "passed", flaky: true, pass_rate: 0.6, suites: [{ id: "chains" }, { id: "issue" }], trend: ["failed", "passed", "passed", "passed"], last: null },
   { id: "d", title: "Бронювання", status: "never", flaky: false, pass_rate: null, suites: [{ id: "booking" }], last: null },
 ];
 const none = { query: "", suite: "", statuses: [], flakyOnly: false };
@@ -23,6 +23,16 @@ describe("the test suite", () => {
     expect(sortTests(tests, "name").map((item) => item.id)).toEqual(["d", "a", "c", "b"]);
     expect(sortTests(tests, "recent").map((item) => item.id)[0]).toBe("a");
     expect(sortTests(tests, "stability").map((item) => item.id)).toEqual(["b", "c", "a", "d"]);
+  });
+
+  it("sorts by any column, both ways (env_ai_dev#24)", () => {
+    expect(sortTests(tests, "duration").map((item) => item.id)).toEqual(["b", "a", "d", "c"]);
+    expect(sortTests(tests, "trend").map((item) => item.id)).toEqual(["b", "c", "a", "d"]);
+    expect(trendFailures(tests[3])).toBe(-1);
+    expect(sortTests(tests, "name", true).map((item) => item.id)).toEqual(["b", "c", "a", "d"]);
+    expect(sortTests(tests, "stability", true).map((item) => item.id)).toEqual(["d", "a", "c", "b"]);
+    expect(nextSort({ sort: "name", reversed: false }, "name")).toEqual({ sort: "name", reversed: true });
+    expect(nextSort({ sort: "name", reversed: true }, "recent")).toEqual({ sort: "recent", reversed: false });
   });
 
   it("lists suites once and reads times and rates the way people say them", () => {

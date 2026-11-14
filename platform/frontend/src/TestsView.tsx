@@ -5,7 +5,7 @@ import { LaunchPanel } from "./LaunchPanel";
 import { TestDetail } from "./ReportsView";
 import { isActive, runStatusLabel, standLabel } from "./e2eRun";
 import {
-  STATUS_VIEW, filterTests, percent, relativeTime, routeHash, sortTests, suitesOf, type TestFilters, type TestSort,
+  STATUS_VIEW, filterTests, nextSort, percent, relativeTime, routeHash, sortTests, suitesOf, type SortState, type TestFilters, type TestSort,
 } from "./testsCatalog";
 import { EmptyState, StatusBadge, Trend } from "./ui";
 
@@ -24,14 +24,36 @@ type Props = {
   onCloseSingle?: () => void;
 };
 
-const SORTS: [TestSort, string][] = [["attention", "Спершу проблемні"], ["name", "За назвою"], ["recent", "Нещодавні"], ["stability", "Найменш стабільні"]];
+const SORTS: [TestSort, string][] = [["attention", "Спершу проблемні"], ["name", "За назвою"], ["recent", "Нещодавні"],
+  ["duration", "Найдовші"], ["trend", "Більше збоїв за останні 10"], ["stability", "Найменш стабільні"]];
+const SORT_STORE = "aftertime.tests-sort";
+
+function loadSort(): SortState {
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(SORT_STORE) || "null");
+    if (stored && SORTS.some(([value]) => value === stored.sort)) return { sort: stored.sort, reversed: !!stored.reversed };
+  } catch { /* no storage: the default order */ }
+  return { sort: "attention", reversed: false };
+}
+
+/** A column header that sorts the table by its data; a second click turns the order around (env_ai_dev#24). */
+function SortHeader({ label, sort, state, onSort }: { label: string; sort: TestSort; state: SortState; onSort: (sort: TestSort) => void }) {
+  const on = state.sort === sort;
+  return <span role="columnheader" aria-sort={on ? (state.reversed ? "descending" : "ascending") : "none"}>
+    <button className={`sort-head ${on ? "on" : ""}`} title={on ? "Змінити напрям сортування" : `Сортувати: ${label.toLowerCase()}`} onClick={() => onSort(sort)}>
+      {label}<i aria-hidden="true">{on ? (state.reversed ? "▲" : "▼") : "↕"}</i>
+    </button>
+  </span>;
+}
 
 /** The whole end-to-end test suite: browse, filter, look into a test, run what is needed. */
 export function TestsView({ selectedId, tab, onSelect, onTab, onOpenProcess, onOpenLaunch, onError, onOpenTest, single, onCloseSingle }: Props) {
   const [tests, setTests] = useState<Row[] | null>(null);
   const [retired, setRetired] = useState(false);
   const [filters, setFilters] = useState<TestFilters>({ query: "", suite: "", statuses: [], flakyOnly: false });
-  const [sort, setSort] = useState<TestSort>("attention");
+  const [order, setOrder] = useState<SortState>(loadSort);
+  useEffect(() => { try { window.localStorage.setItem(SORT_STORE, JSON.stringify(order)); } catch { /* not kept: fine */ } }, [order]);
+  const sortBy = (sort: TestSort) => setOrder((current) => nextSort(current, sort));
   const [chosen, setChosen] = useState<string[]>([]);
   const [stand, setStand] = useState<{ online: boolean; busy: boolean }>({ online: false, busy: false });
   const [notice, setNotice] = useState("");
@@ -52,7 +74,7 @@ export function TestsView({ selectedId, tab, onSelect, onTab, onOpenProcess, onO
     return () => window.clearInterval(timer);
   }, [load]);
 
-  const visible = useMemo(() => sortTests(filterTests(tests || [], filters), sort), [tests, filters, sort]);
+  const visible = useMemo(() => sortTests(filterTests(tests || [], filters), order.sort, order.reversed), [tests, filters, order]);
   const counts = useMemo(() => {
     const result: Record<string, number> = {};
     for (const test of tests || []) result[test.status] = (result[test.status] || 0) + 1;
@@ -116,7 +138,7 @@ export function TestsView({ selectedId, tab, onSelect, onTab, onOpenProcess, onO
           <option value="">Усі набори</option>
           {suites.map((suite) => <option key={suite.id} value={suite.id}>{suite.id} — {suite.title}</option>)}
         </select>
-        <select aria-label="Сортування" value={sort} onChange={(event) => setSort(event.target.value as TestSort)}>
+        <select aria-label="Сортування" value={order.sort} onChange={(event) => setOrder({ sort: event.target.value as TestSort, reversed: false })}>
           {SORTS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select>
         <div className="ux-chips" role="group" aria-label="Статус">
@@ -139,7 +161,11 @@ export function TestsView({ selectedId, tab, onSelect, onTab, onOpenProcess, onO
           <div className="tests-row head" role="row">
             <span><input type="checkbox" aria-label="Вибрати всі показані" checked={allChosen}
               onChange={() => setChosen(allChosen ? [] : visible.map((test) => test.id))} /></span>
-            <span>Статус</span><span>Тест</span><span>Останній запуск</span><span>Останні 10</span><span>Стабільність</span>
+            <SortHeader label="Статус" sort="attention" state={order} onSort={sortBy} />
+            <SortHeader label="Тест" sort="name" state={order} onSort={sortBy} />
+            <SortHeader label="Останній запуск" sort="recent" state={order} onSort={sortBy} />
+            <SortHeader label="Останні 10" sort="trend" state={order} onSort={sortBy} />
+            <SortHeader label="Стабільність" sort="stability" state={order} onSort={sortBy} />
           </div>
           {tests === null ? <EmptyState title="Завантаження тестів…" />
             : !visible.length ? <EmptyState title="Немає тестів за цими умовами">Змініть пошук або фільтри.</EmptyState>
@@ -229,8 +255,27 @@ function TestCard({ id, runBlocked, onClose, onRun, onOpenProcess, onError }: {
         <td>{runStatusLabel(item)}</td>
         <td>{item.stand?.version ? (item.stand.changed ? `${item.stand.version} → ${item.stand.end?.version}` : item.stand.version) : "—"}</td>
         <td>{item.recording === "ready" ? "є" : item.recording === "packing" ? "пакується" : "—"}</td>
-        <td>{item.kind === "binding" && !isActive(item) && <button onClick={() => onOpenProcess(item.binding, item.id)}>▶ Програти</button>}</td>
+        <td className="run-actions"><RunActions item={item} runs={test.aftertime_runs} binding={test.binding} onOpenProcess={onOpenProcess} /></td>
       </tr>)}</tbody>
     </table> : <EmptyState title="З Aftertime цей тест ще не запускали" />)}
   </aside>;
+}
+
+/**
+ * Ways from a run of the test to its process (env_ai_dev#24): a run of the process replays itself; a run of
+ * suites replays the run this test got inside it (when the bridge recorded one), and opens the process
+ * of the test in any case, where the results of the test from the reports are painted on the diagram.
+ */
+function RunActions({ item, runs, binding, onOpenProcess }: {
+  item: Row; runs: Row[]; binding?: string | null; onOpenProcess: (binding: string, replayRunId?: string) => void;
+}) {
+  if (isActive(item)) return null;
+  const replay = item.kind === "binding" ? item
+    : runs.find((other) => other.kind === "binding" && other.parent_id === item.id && (!binding || other.binding === binding) && !isActive(other));
+  const target = replay?.binding || binding;
+  if (!target) return <span className="muted" title="Тест не прив'язаний до процесу BPMN">—</span>;
+  return <>
+    {replay && <button onClick={() => onOpenProcess(replay.binding, replay.id)}>▶ Програти</button>}
+    {item.kind !== "binding" && <button title="Відкрити процес тесту на схемі BPMN" onClick={() => onOpenProcess(target)}>◇ Схема BPMN</button>}
+  </>;
 }

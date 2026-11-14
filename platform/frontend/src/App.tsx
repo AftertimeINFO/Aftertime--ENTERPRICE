@@ -564,6 +564,8 @@ export default function App() {
       setMode(route.section as Mode);
       setTestId(route.section === "tests" || route.section === "prep" ? route.id : null);
       setSectionTab(route.tab);
+      // A link to a section (such as "Підготовка перед тестом" on a test tab) shows that section, keeping the tabs.
+      setAppTabs((current) => current.active === MAIN_TAB ? current : { ...current, active: MAIN_TAB });
     };
     window.addEventListener("hashchange", apply);
     return () => window.removeEventListener("hashchange", apply);
@@ -650,7 +652,7 @@ export default function App() {
   if (!w)
     return <div className="loading">MODEL LAB · завантаження… {error}</div>;
   return (
-    <main className={`app-shell ${testing || processOnly ? "reports-shell" : ""} ${appTabs.tabs.length ? "with-app-tabs" : ""} ${activeTab ? "on-tab-page" : ""}`}>
+    <main className={`app-shell ${testing || processOnly ? "reports-shell" : ""} with-app-tabs ${activeTab ? "on-tab-page" : ""}`}>
       <header className="topbar">
         <div className="brand">
           <i />
@@ -819,7 +821,8 @@ export default function App() {
           <button onClick={() => setError("")}>×</button>
         </div>
       )}
-      {appTabs.tabs.length > 0 && <AppTabsBar mainTitle={MODE_TITLE[mode]} tabs={appTabs.tabs} active={appTabs.active} onActivate={activateTab} onClose={closeTab} />}
+      {/* The bar stays even with the section alone: the tabs never vanish from under the person (env_ai_dev#24). */}
+      <AppTabsBar mainTitle={MODE_TITLE[mode]} tabs={appTabs.tabs} active={appTabs.active} onActivate={activateTab} onClose={closeTab} />
       {appTabs.tabs.map((tab) => <section key={tab.key} className="app-tab-page" hidden={tab.key !== appTabs.active} role="tabpanel" aria-label={tab.title}>
         <ErrorBoundary key={tab.key}>{tab.kind === "test"
           ? <TestsView single selectedId={tab.testId} tab={null} onSelect={() => {}} onTab={() => {}} onOpenProcess={openProcess}

@@ -48,7 +48,7 @@ def get_test(test_id: str, db: Session = Depends(get_db)) -> dict[str, Any]:
     for run in db.scalars(select(LabE2eRun).order_by(LabE2eRun.created_at.desc()).limit(200)):
         target = run.target or {}
         if (test_id in (target.get("cases") or [])) or (suite_ids & set(target.get("suites") or [])) or (binding and run.binding == binding):
-            runs.append({"id": run.id, "kind": run.kind, "status": run.status, "created_at": run.created_at,
+            runs.append({"id": run.id, "kind": run.kind, "parent_id": run.parent_id, "status": run.status, "created_at": run.created_at,
                          "finished_at": run.finished_at, "binding": run.binding, "target": target,
                          "recording": (run.recording or {}).get("status"), "stand": run.stand})
         if len(runs) >= 20:
