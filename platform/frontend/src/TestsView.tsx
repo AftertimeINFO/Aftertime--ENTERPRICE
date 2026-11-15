@@ -46,6 +46,38 @@ function SortHeader({ label, sort, state, onSort }: { label: string; sort: TestS
   </span>;
 }
 
+/** Last tested configuration version: how much of the suite ran on it and how it ended (env_ai_dev#29). */
+function VersionSummary({ summary }: { summary: Row | null }) {
+  if (!summary) return null;
+  if (!summary.version) return <div className="tests-version muted">Протестованої версії ще немає</div>;
+  const executed = Number(summary.executed) || 0;
+  const tests = Number(summary.tests) || 0;
+  const share = (value: number) => (executed ? `${Math.round((value * 100) / executed)}%` : "—");
+  return <div className="tests-version" aria-label="Остання протестована версія">
+    <div className="tv-cell">
+      <span className="tv-label">Остання протестована версія</span>
+      <strong className="tv-version">{summary.version}</strong>
+      <small>{relativeTime(summary.at)} · запусків: {summary.launches}</small>
+    </div>
+    <div className="tv-cell" title="Активні тести набору, що мають результат на цій версії">
+      <span className="tv-label">Виконано</span>
+      <strong>{summary.percent}%</strong>
+      <small>{executed} з {tests} тестів</small>
+      <span className="tv-bar" aria-hidden="true"><i style={{ width: `${Math.min(100, Number(summary.percent) || 0)}%` }} /></span>
+    </div>
+    <div className="tv-cell passed" title="Останній результат тесту на цій версії - пройдено">
+      <span className="tv-label">Успішні</span>
+      <strong>{summary.passed}</strong>
+      <small>{share(Number(summary.passed) || 0)} виконаних</small>
+    </div>
+    <div className="tv-cell failed" title="Останній результат тесту на цій версії - збій">
+      <span className="tv-label">Провальні</span>
+      <strong>{summary.failed}</strong>
+      <small>{share(Number(summary.failed) || 0)} виконаних{summary.other ? ` · інші: ${summary.other}` : ""}</small>
+    </div>
+  </div>;
+}
+
 /** The whole end-to-end test suite: browse, filter, look into a test, run what is needed. */
 export function TestsView({ selectedId, tab, onSelect, onTab, onOpenProcess, onOpenLaunch, onError, onOpenTest, single, onCloseSingle }: Props) {
   const [tests, setTests] = useState<Row[] | null>(null);
@@ -57,6 +89,7 @@ export function TestsView({ selectedId, tab, onSelect, onTab, onOpenProcess, onO
   const [chosen, setChosen] = useState<string[]>([]);
   const [stand, setStand] = useState<{ online: boolean; busy: boolean }>({ online: false, busy: false });
   const [notice, setNotice] = useState("");
+  const [version, setVersion] = useState<Row | null>(null);
   const list = useRef<HTMLDivElement | null>(null);
 
   const load = useCallback(async () => {
@@ -67,6 +100,8 @@ export function TestsView({ selectedId, tab, onSelect, onTab, onOpenProcess, onO
     } catch (error) {
       onError(String(error));
     }
+    // env_ai_dev#29: a missing summary must not break the list
+    api.resultsVersion().then(setVersion, () => setVersion(null));
   }, [retired, onError]);
   useEffect(() => {
     load();
@@ -123,6 +158,7 @@ export function TestsView({ selectedId, tab, onSelect, onTab, onOpenProcess, onO
         <h2>Тести</h2>
         <p>{tests ? `${tests.length} тестів у наборі · ${suites.length} наборів` : "Завантаження…"}{runBlocked ? ` · ${runBlocked}` : ""}</p>
       </div>
+      <VersionSummary summary={version} />
       <nav className="ux-tabs" role="tablist">
         <button role="tab" aria-selected={tab !== "launch"} className={tab !== "launch" ? "active" : ""} onClick={() => onTab("list")}>Перелік</button>
         <button role="tab" aria-selected={tab === "launch"} className={tab === "launch" ? "active" : ""} onClick={() => onTab("launch")}>Запуск і черга</button>

@@ -16,6 +16,17 @@
 .ux-header { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px; margin-bottom: 14px; }
 .ux-header h2 { margin: 0 0 2px; font-size: 22px; }
 .ux-header p { margin: 0; color: var(--ux-muted); }
+/* env_ai_dev#29: summary of the last tested version in the header of the tests page */
+.tests-version { display: flex; flex-wrap: wrap; gap: 8px; flex: 1 1 520px; justify-content: center; }
+.tests-version .tv-cell { display: flex; flex-direction: column; min-width: 120px; padding: 6px 12px; border: 1px solid var(--ux-line); border-radius: 6px; background: var(--ux-panel); }
+.tests-version .tv-label { color: var(--ux-muted); font-size: 10px; letter-spacing: .04em; text-transform: uppercase; }
+.tests-version strong { font-size: 18px; line-height: 1.25; font-variant-numeric: tabular-nums; }
+.tests-version small { color: var(--ux-muted); font-size: 11px; }
+.tests-version .tv-version { color: var(--signal, #c8ff4d); }
+.tests-version .passed strong { color: var(--ok, #6fcf97); }
+.tests-version .failed strong { color: var(--bad, #ff8a7d); }
+.tests-version .tv-bar { display: block; height: 3px; margin-top: 4px; border-radius: 2px; background: var(--ux-line); overflow: hidden; }
+.tests-version .tv-bar i { display: block; height: 100%; background: var(--signal, #c8ff4d); }
 .ux-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--ux-line); }
 .ux-tabs button { padding: 7px 12px; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--ux-muted); cursor: pointer; }
 .ux-tabs button.active { color: var(--ux-text); border-bottom-color: var(--signal); }

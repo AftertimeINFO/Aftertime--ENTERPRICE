@@ -62,6 +62,8 @@ export const api = {
   tests: (includeRetired = false) => request<Row[]>(`/lab/tests${includeRetired ? "?include_retired=true" : ""}`),
   test: (id: string) => request<Row>(`/lab/tests/${encodeURIComponent(id)}`),
   resultsSummary: () => request<Row>("/lab/results/summary"),
+  // env_ai_dev#29: last tested configuration version and how the suite ended on it
+  resultsVersion: () => request<Row>("/lab/results/version"),
   resultsMatrix: (suite = "") => request<Row>(`/lab/results/matrix${suite ? `?suite=${encodeURIComponent(suite)}` : ""}`),
   centerState: () => request<Row>("/lab/center/state"),
   centerRuns: () => request<Row[]>("/lab/center/runs"),

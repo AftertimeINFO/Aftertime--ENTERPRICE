@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.models import LabE2eRun, LabTest, ReportLaunch, ReportResult
 from app.services.test_bindings import load_bindings
+from app.services.version_summary import version_summary
 from app.services.tests_catalog import results_by_test, summarize_test
 
 router = APIRouter(prefix="/api/v1/lab", tags=["tests"])
@@ -95,6 +96,12 @@ def results_summary(days: int = 14, db: Session = Depends(get_db)) -> dict[str, 
         "daily": [{"day": day, **dict(values)} for day, values in sorted(daily.items())],
         "attention": [item for item in summaries if item["status"] in ("failed", "broken") or item["flaky"]],
     }
+
+
+@router.get("/results/version")
+def results_version(db: Session = Depends(get_db)) -> dict[str, Any]:
+    """Last tested configuration version: share of active tests run on it, passed and failed (env_ai_dev#29)."""
+    return version_summary(db, [row.id for row in _tests(db, False)])
 
 
 @router.get("/results/matrix")
