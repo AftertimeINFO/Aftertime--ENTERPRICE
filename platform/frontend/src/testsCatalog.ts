@@ -92,3 +92,25 @@ export function routeHash(section: string, id?: string | null, tab?: string | nu
   const parts = [section, id, tab].filter(Boolean).map((part) => encodeURIComponent(part as string));
   return `#/${parts.join("/")}`;
 }
+
+/** A summary block of a version group used as a filter of the table (env_ai_dev#29). */
+export type VersionKind = "executed" | "passed" | "failed" | "missing";
+export type VersionPick = { group: "chosen" | "latest"; kind: VersionKind };
+
+/** A line of the version picker: the version and its result in short (env_ai_dev#29). */
+export function versionOptionLabel(item: Row, marks: { best?: boolean; latest?: boolean } = {}): string {
+  const tags = [marks.best ? "найкраща" : "", marks.latest ? "остання" : ""].filter(Boolean).join(", ");
+  return `${item.version} · ✓ ${item.passed} · ✗ ${item.failed} · виконано ${item.executed}/${item.tests} (${item.percent}%)${tags ? ` · ${tags}` : ""}`;
+}
+export const VERSION_KIND_LABEL: Record<VersionKind, string> = {
+  executed: "Виконані", passed: "Успішні", failed: "Провальні", missing: "Не виконані",
+};
+
+/** Does a test fall into a block: ``statuses`` - test id → its latest status on the version of the group. */
+export function matchesVersionKind(test: Row, statuses: Record<string, string>, kind: VersionKind): boolean {
+  const status = statuses[test.id];
+  if (kind === "missing") return !!test.active && status === undefined;
+  if (kind === "executed") return status !== undefined;
+  if (kind === "passed") return status === "passed";
+  return status === "failed" || status === "broken";
+}

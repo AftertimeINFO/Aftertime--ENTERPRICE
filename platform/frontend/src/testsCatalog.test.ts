@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { filterTests, nextSort, parseRoute, percent, relativeTime, routeHash, sortTests, suitesOf, trendFailures } from "./testsCatalog";
+import {
+  filterTests, matchesVersionKind, nextSort, parseRoute, percent, relativeTime, routeHash, sortTests, suitesOf, trendFailures, versionOptionLabel,
+} from "./testsCatalog";
 
 const tests = [
   { id: "a", title: "Видача", status: "passed", flaky: false, pass_rate: 1, suites: [{ id: "issue" }], trend: ["passed", "passed"], last: { start: "2026-11-04T10:00:00Z", duration_ms: 60_000, message: "" } },
@@ -43,6 +45,18 @@ describe("the test suite", () => {
     ];
     expect(sortTests(rows, "passed").map((item) => item.id)).toEqual(["z", "x", "y"]);
     expect(sortTests(rows, "passed", true).map((item) => item.id)).toEqual(["y", "x", "z"]);
+  });
+
+  it("filters by a block of a version group and labels versions in short (env_ai_dev#29)", () => {
+    const statuses = { a: "passed", b: "failed", c: "broken" };
+    const rows = [{ id: "a", active: true }, { id: "b", active: true }, { id: "c", active: true }, { id: "d", active: true }, { id: "e", active: false }];
+    const ids = (kind: Parameters<typeof matchesVersionKind>[2]) => rows.filter((row) => matchesVersionKind(row, statuses, kind)).map((row) => row.id);
+    expect(ids("passed")).toEqual(["a"]);
+    expect(ids("failed")).toEqual(["b", "c"]);
+    expect(ids("executed")).toEqual(["a", "b", "c"]);
+    expect(ids("missing")).toEqual(["d"]);
+    expect(versionOptionLabel({ version: "1.75.0.2", passed: 12, failed: 10, executed: 22, tests: 56, percent: 39 }, { best: true }))
+      .toBe("1.75.0.2 · ✓ 12 · ✗ 10 · виконано 22/56 (39%) · найкраща");
   });
 
   it("lists suites once and reads times and rates the way people say them", () => {

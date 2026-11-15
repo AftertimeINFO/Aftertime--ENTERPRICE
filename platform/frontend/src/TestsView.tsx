@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { api, type Row } from "./api";
 import { formatDuration } from "./reports";
 import { LaunchPanel } from "./LaunchPanel";
 import { TestDetail } from "./ReportsView";
 import { isActive, runStatusLabel, standLabel } from "./e2eRun";
 import {
-  STATUS_VIEW, filterTests, nextSort, percent, relativeTime, routeHash, sortTests, suitesOf, type SortState, type TestFilters, type TestSort,
+  STATUS_VIEW, VERSION_KIND_LABEL, filterTests, matchesVersionKind, nextSort, versionOptionLabel, percent, relativeTime, routeHash, sortTests, suitesOf,
+  type SortState, type TestFilters, type TestSort, type VersionKind, type VersionPick,
 } from "./testsCatalog";
 import { EmptyState, StatusBadge, Trend } from "./ui";
 
@@ -46,35 +47,75 @@ function SortHeader({ label, sort, state, onSort }: { label: string; sort: TestS
   </span>;
 }
 
-/** Last tested configuration version: how much of the suite ran on it and how it ended (env_ai_dev#29). */
-function VersionSummary({ summary }: { summary: Row | null }) {
-  if (!summary) return null;
-  if (!summary.version) return <div className="tests-version muted">Протестованої версії ще немає</div>;
+const GROUP_TITLE: Record<VersionPick["group"], string> = { chosen: "Вибрана версія", latest: "Остання протестована" };
+
+/**
+ * One version in the header (env_ai_dev#29): the version and four blocks. Every block is a toggle filter of the
+ * table (aria-pressed); the pressed one is blue. Only one block of all groups filters at a time.
+ */
+function VersionGroup({ group, summary, title, note, picker, pick, onPick }: {
+  group: VersionPick["group"]; summary: Row; title?: string; note?: string; picker?: ReactNode;
+  pick: VersionPick | null; onPick: (pick: VersionPick | null) => void;
+}) {
   const executed = Number(summary.executed) || 0;
   const tests = Number(summary.tests) || 0;
-  const share = (value: number) => (executed ? `${Math.round((value * 100) / executed)}%` : "—");
-  return <div className="tests-version" aria-label="Остання протестована версія">
-    <div className="tv-cell">
-      <span className="tv-label">Остання протестована версія</span>
-      <strong className="tv-version">{summary.version}</strong>
-      <small>{relativeTime(summary.at)} · запусків: {summary.launches}</small>
+  const share = (value: number, of: number) => (of ? `${Math.round((value * 100) / of)}%` : "—");
+  const block = (kind: VersionKind, value: string | number, note: string, hint: string, extra?: ReactNode) => {
+    const on = pick?.group === group && pick.kind === kind;
+    return <button type="button" className={`tv-cell ${kind} ${on ? "on" : ""}`} aria-pressed={on}
+      title={`${hint}. ${on ? "Зняти фільтр" : "Показати в таблиці лише ці тести"}`}
+      onClick={() => onPick(on ? null : { group, kind })}>
+      <span className="tv-label">{VERSION_KIND_LABEL[kind]}</span>
+      <strong>{value}</strong>
+      <small>{note}</small>
+      {extra}
+    </button>;
+  };
+  return <section className={`tv-group ${group}`} aria-label={`${title || GROUP_TITLE[group]}: версія ${summary.version}`}>
+    <div className="tv-head">
+      <span className="tv-label">{title || GROUP_TITLE[group]}</span>
+      {picker || <strong className="tv-version">{summary.version}</strong>}
+      <small>{note || `${relativeTime(summary.at)} · запусків: ${summary.launches}`}</small>
     </div>
-    <div className="tv-cell" title="Активні тести набору, що мають результат на цій версії">
-      <span className="tv-label">Виконано</span>
-      <strong>{summary.percent}%</strong>
-      <small>{executed} з {tests} тестів</small>
-      <span className="tv-bar" aria-hidden="true"><i style={{ width: `${Math.min(100, Number(summary.percent) || 0)}%` }} /></span>
-    </div>
-    <div className="tv-cell passed" title="Останній результат тесту на цій версії - пройдено">
-      <span className="tv-label">Успішні</span>
-      <strong>{summary.passed}</strong>
-      <small>{share(Number(summary.passed) || 0)} виконаних</small>
-    </div>
-    <div className="tv-cell failed" title="Останній результат тесту на цій версії - збій">
-      <span className="tv-label">Провальні</span>
-      <strong>{summary.failed}</strong>
-      <small>{share(Number(summary.failed) || 0)} виконаних{summary.other ? ` · інші: ${summary.other}` : ""}</small>
-    </div>
+    {block("executed", `${summary.percent}%`, `${executed} з ${tests} тестів`, "Активні тести, що мають результат на цій версії",
+      <span className="tv-bar" aria-hidden="true"><i style={{ width: `${Math.min(100, Number(summary.percent) || 0)}%` }} /></span>)}
+    {block("passed", summary.passed, `${share(Number(summary.passed) || 0, executed)} виконаних`, "Останній результат на цій версії - пройдено")}
+    {block("failed", summary.failed, `${share(Number(summary.failed) || 0, executed)} виконаних${summary.other ? ` · інші: ${summary.other}` : ""}`,
+      "Останній результат на цій версії - збій")}
+    {block("missing", summary.missing ?? tests - executed, `${share(Number(summary.missing ?? tests - executed) || 0, tests)} набору`,
+      "Активні тести без жодного результату на цій версії")}
+  </section>;
+}
+
+/**
+ * Left: a version picked in the list, the best one (most passed tests) by default; right: the last tested one
+ * (env_ai_dev#29). Every line of the list carries the result of its version in short.
+ */
+function VersionSummary({ summary, chosen, onChoose, pick, onPick }: {
+  summary: Row | null; chosen: Row | null; onChoose: (version: string | null) => void;
+  pick: VersionPick | null; onPick: (pick: VersionPick | null) => void;
+}) {
+  if (!summary) return null;
+  if (!summary.version) return <div className="tests-version muted">Протестованої версії ще немає</div>;
+  const versions: Row[] = summary.versions || [];
+  const best: Row | null = summary.best?.version ? summary.best : null;
+  const left = chosen || best;
+  // the closed picker shows only the version; the native list (keyboard, screen readers) lies over it, transparent
+  const picker = versions.length > 1 && left ? <span className="tv-picker" title="Вибрати іншу версію">
+    <strong className="tv-version">{left.version}</strong><i aria-hidden="true">▾</i>
+    <select aria-label="Версія для порівняння" value={left.version}
+      onChange={(event) => onChoose(event.target.value === best?.version ? null : event.target.value)}>
+      {versions.map((item) => <option key={item.version} value={item.version}>
+        {versionOptionLabel(item, { best: item.version === best?.version, latest: item.version === summary.version })}
+      </option>)}
+    </select>
+  </span> : undefined;
+  const isBest = left?.version === best?.version;
+  return <div className="tests-version">
+    {left && <VersionGroup group="chosen" summary={left} picker={picker} pick={pick} onPick={onPick}
+      title={isBest ? "Найбільше успішних" : "Вибрана версія"}
+      note={left.version === summary.version ? `збігається з останньою · ${relativeTime(left.at)}` : undefined} />}
+    <VersionGroup group="latest" summary={summary} pick={pick} onPick={onPick} />
   </div>;
 }
 
@@ -90,6 +131,17 @@ export function TestsView({ selectedId, tab, onSelect, onTab, onOpenProcess, onO
   const [stand, setStand] = useState<{ online: boolean; busy: boolean }>({ online: false, busy: false });
   const [notice, setNotice] = useState("");
   const [version, setVersion] = useState<Row | null>(null);
+  // env_ai_dev#29: a block of a version group filters the table; Esc takes the filter off
+  const [versionPick, setVersionPick] = useState<VersionPick | null>(null);
+  // the version of the left group; null - the best one
+  const [chosenVersion, setChosenVersion] = useState<string | null>(null);
+  const chosenSummary: Row | null = chosenVersion ? (version?.versions || []).find((item: Row) => item.version === chosenVersion) || null : null;
+  useEffect(() => {
+    if (!versionPick) return;
+    const off = (event: globalThis.KeyboardEvent) => { if (event.key === "Escape") setVersionPick(null); };
+    window.addEventListener("keydown", off);
+    return () => window.removeEventListener("keydown", off);
+  }, [versionPick]);
   const list = useRef<HTMLDivElement | null>(null);
 
   const load = useCallback(async () => {
@@ -109,7 +161,13 @@ export function TestsView({ selectedId, tab, onSelect, onTab, onOpenProcess, onO
     return () => window.clearInterval(timer);
   }, [load]);
 
-  const visible = useMemo(() => sortTests(filterTests(tests || [], filters), order.sort, order.reversed), [tests, filters, order]);
+  const pickedGroup: Row | null = versionPick ? (versionPick.group === "chosen" ? chosenSummary || version?.best : version) || null : null;
+  const visible = useMemo(() => {
+    const shown = filterTests(tests || [], filters);
+    const picked = pickedGroup && versionPick
+      ? shown.filter((test) => matchesVersionKind(test, pickedGroup.statuses || {}, versionPick.kind)) : shown;
+    return sortTests(picked, order.sort, order.reversed);
+  }, [tests, filters, order, pickedGroup, versionPick]);
   const counts = useMemo(() => {
     const result: Record<string, number> = {};
     for (const test of tests || []) result[test.status] = (result[test.status] || 0) + 1;
@@ -158,7 +216,7 @@ export function TestsView({ selectedId, tab, onSelect, onTab, onOpenProcess, onO
         <h2>Тести</h2>
         <p>{tests ? `${tests.length} тестів у наборі · ${suites.length} наборів` : "Завантаження…"}{runBlocked ? ` · ${runBlocked}` : ""}</p>
       </div>
-      <VersionSummary summary={version} />
+      <VersionSummary summary={version} chosen={chosenSummary} onChoose={setChosenVersion} pick={versionPick} onPick={setVersionPick} />
       <nav className="ux-tabs" role="tablist">
         <button role="tab" aria-selected={tab !== "launch"} className={tab !== "launch" ? "active" : ""} onClick={() => onTab("list")}>Перелік</button>
         <button role="tab" aria-selected={tab === "launch"} className={tab === "launch" ? "active" : ""} onClick={() => onTab("launch")}>Запуск і черга</button>
@@ -186,6 +244,10 @@ export function TestsView({ selectedId, tab, onSelect, onTab, onOpenProcess, onO
             ≈ Нестабільні <b>{(tests || []).filter((test) => test.flaky).length}</b>
           </button>
         </div>
+        {versionPick && pickedGroup && <button className="chip version-pick on" aria-label="Зняти фільтр за версією"
+          title="Зняти фільтр (Esc)" onClick={() => setVersionPick(null)}>
+          {pickedGroup.version} · {VERSION_KIND_LABEL[versionPick.kind]} <b>{visible.length}</b> ✕
+        </button>}
         <label className="ux-check"><input type="checkbox" checked={retired} onChange={(event) => setRetired(event.target.checked)} /> вилучені з набору</label>
         <span className="ux-spacer" />
         <button className="primary" disabled={!chosen.length || !!runBlocked} title={runBlocked || undefined}

@@ -16,17 +16,32 @@
 .ux-header { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px; margin-bottom: 14px; }
 .ux-header h2 { margin: 0 0 2px; font-size: 22px; }
 .ux-header p { margin: 0; color: var(--ux-muted); }
-/* env_ai_dev#29: summary of the last tested version in the header of the tests page */
-.tests-version { display: flex; flex-wrap: wrap; gap: 8px; flex: 1 1 520px; justify-content: center; }
-.tests-version .tv-cell { display: flex; flex-direction: column; min-width: 120px; padding: 6px 12px; border: 1px solid var(--ux-line); border-radius: 6px; background: var(--ux-panel); }
-.tests-version .tv-label { color: var(--ux-muted); font-size: 10px; letter-spacing: .04em; text-transform: uppercase; }
+/* env_ai_dev#29: version groups in the header of the tests page; every block filters the table, the pressed one is blue */
+.tests-version { display: flex; flex-wrap: wrap; gap: 10px; flex: 1 1 560px; justify-content: center; }
+.tests-version .tv-group { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px; border: 1px solid var(--ux-line); border-radius: 8px; }
+.tests-version .tv-head, .tests-version .tv-cell { display: flex; flex-direction: column; align-items: flex-start; min-width: 104px; padding: 6px 12px;
+  border: 1px solid var(--ux-line); border-radius: 6px; background: var(--ux-panel); color: var(--ux-text); font: inherit; text-align: left; }
+.tests-version .tv-head { border-color: transparent; background: none; padding-left: 6px; }
+.tests-version .tv-cell { cursor: pointer; transition: border-color .12s, background-color .12s; }
+.tests-version .tv-cell:hover { border-color: #3d6b5c; background: #11241e; }
+.tests-version .tv-cell.on { border-color: var(--ux-focus); background: #13283d; box-shadow: inset 0 0 0 1px var(--ux-focus); }
+.tests-version .tv-cell.on .tv-label { color: var(--ux-focus); }
+.tests-version .tv-label { color: var(--ux-muted); font-size: 10px; letter-spacing: .04em; text-transform: uppercase; white-space: nowrap; }
 .tests-version strong { font-size: 18px; line-height: 1.25; font-variant-numeric: tabular-nums; }
-.tests-version small { color: var(--ux-muted); font-size: 11px; }
+.tests-version small { color: var(--ux-muted); font-size: 11px; white-space: nowrap; }
 .tests-version .tv-version { color: var(--signal, #c8ff4d); }
 .tests-version .passed strong { color: var(--ok, #6fcf97); }
 .tests-version .failed strong { color: var(--bad, #ff8a7d); }
-.tests-version .tv-bar { display: block; height: 3px; margin-top: 4px; border-radius: 2px; background: var(--ux-line); overflow: hidden; }
+.tests-version .missing strong { color: #e9c46a; }
+.tests-version .tv-bar { display: block; align-self: stretch; height: 3px; margin-top: 4px; border-radius: 2px; background: var(--ux-line); overflow: hidden; }
 .tests-version .tv-bar i { display: block; height: 100%; background: var(--signal, #c8ff4d); }
+.tests-version .tv-picker { position: relative; display: inline-flex; align-items: baseline; gap: 6px; padding: 0 22px 0 0; border-radius: 4px; cursor: pointer; }
+.tests-version .tv-picker i { position: absolute; right: 4px; top: 2px; color: var(--ux-muted); font-style: normal; font-size: 12px; }
+.tests-version .tv-picker:hover i, .tests-version .tv-picker:focus-within i { color: var(--ux-focus); }
+.tests-version .tv-picker:focus-within { outline: 2px solid var(--ux-focus); outline-offset: 2px; }
+.tests-version .tv-picker select { position: absolute; inset: 0; width: 100%; opacity: 0; cursor: pointer; font-size: 12px; }
+.tests-version .tv-picker option { background: var(--ux-panel); color: var(--ux-text); }
+.ux .chip.version-pick { border-color: var(--ux-focus); color: var(--ux-focus); background: #13283d; }
 .ux-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--ux-line); }
 .ux-tabs button { padding: 7px 12px; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--ux-muted); cursor: pointer; }
 .ux-tabs button.active { color: var(--ux-text); border-bottom-color: var(--signal); }

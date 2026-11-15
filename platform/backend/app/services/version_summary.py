@@ -33,38 +33,58 @@ def run_versions(runs: Iterable[tuple[str, str | None, dict | None]]) -> dict[st
     return {run_id: found for run_id in rows if (found := version(run_id))}
 
 
-def summarize_version(results: list[dict[str, Any]], test_ids: list[str]) -> dict[str, Any]:
-    """``results``: rows with ``full_name``, ``status``, ``start``, ``version``, ``launch_id``, newest first."""
+def summarize_version(results: list[dict[str, Any]], test_ids: list[str], version: str | None = None) -> dict[str, Any]:
+    """``results``: rows with ``full_name``, ``status``, ``start``, ``version``, ``launch_id``, newest first.
+
+    ``version``: the version to sum up; None - the newest one.  ``statuses``: test id → its latest status on the
+    version (the table filters by it); ``missing``: active tests without a result on the version.
+    """
     total = len(test_ids)
     empty = {"version": None, "at": None, "tests": total, "executed": 0, "percent": 0, "passed": 0, "failed": 0,
-             "other": 0, "launches": 0}
+             "other": 0, "missing": total, "launches": 0, "statuses": {}}
     dated = [row for row in results if row.get("version")]
     if not dated:
         return empty
-    version = dated[0]["version"]
+    version = version or dated[0]["version"]
+    on_version = [row for row in dated if row["version"] == version]
+    if not on_version:
+        return {**empty, "version": version}
     wanted = set(test_ids)
     latest: dict[str, dict[str, Any]] = {}
-    launches: set[str] = set()
-    for row in dated:
-        if row["version"] != version:
-            continue
-        launches.add(row["launch_id"])
+    for row in on_version:
         if row["full_name"] in wanted:
             latest.setdefault(row["full_name"], row)
-    statuses = [row["status"] for row in latest.values()]
-    passed = sum(1 for status in statuses if status in GOOD)
-    failed = sum(1 for status in statuses if status in BAD)
+    statuses = {test_id: row["status"] for test_id, row in latest.items()}
+    passed = sum(1 for status in statuses.values() if status in GOOD)
+    failed = sum(1 for status in statuses.values() if status in BAD)
     return {
         "version": version,
-        "at": dated[0]["start"],
+        "at": on_version[0]["start"],
         "tests": total,
         "executed": len(latest),
         "percent": round(len(latest) * 100 / total) if total else 0,
         "passed": passed,
         "failed": failed,
         "other": len(latest) - passed - failed,
-        "launches": len(launches),
+        "missing": total - len(latest),
+        "launches": len({row["launch_id"] for row in on_version}),
+        "statuses": statuses,
     }
+
+
+def all_versions(results: list[dict[str, Any]], test_ids: list[str]) -> list[dict[str, Any]]:
+    """Summary of every tested version, the newest first (the version picker of the tests page)."""
+    order = list(dict.fromkeys(row["version"] for row in results if row.get("version")))
+    return [summarize_version(results, test_ids, version) for version in order]
+
+
+def best_version(results: list[dict[str, Any]], test_ids: list[str]) -> dict[str, Any] | None:
+    """The version with the most passed active tests; on a tie the newer one (results are newest first)."""
+    return pick_best(all_versions(results, test_ids))
+
+
+def pick_best(versions: list[dict[str, Any]]) -> dict[str, Any] | None:
+    return max(versions, key=lambda item: item["passed"], default=None)  # max keeps the first (newer) of equals
 
 
 def result_version(item: dict[str, Any], launch_runs: dict[str, str], versions: dict[str, str]) -> str | None:
@@ -102,7 +122,11 @@ def version_summary(db: Session, test_ids: list[str]) -> dict[str, Any]:
         .order_by(LabE2eRun.created_at.desc(), ReportResult.start.desc().nulls_last())
     ).mappings()
     results = [{**row, "version": versions.get(row["e2e_run_id"])} for row in rows]
-    summary = summarize_version(results, test_ids)
-    if isinstance(summary["at"], datetime) and summary["at"].tzinfo is None:
-        summary["at"] = summary["at"].replace(tzinfo=UTC)
-    return summary
+    versions = all_versions(results, test_ids)
+    summary = versions[0] if versions else summarize_version(results, test_ids)
+    for item in versions:
+        if isinstance(item["at"], datetime) and item["at"].tzinfo is None:
+            item["at"] = item["at"].replace(tzinfo=UTC)
+    # the last tested version stays at the top level (env_ai_dev#29); ``best`` - the version with most passed;
+    # ``versions`` - every tested version, newest first, for the picker
+    return {**summary, "best": pick_best(versions), "versions": versions}

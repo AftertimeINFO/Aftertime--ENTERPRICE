@@ -31,8 +31,23 @@ def test_summary_of_the_newest_version_counts_latest_result_per_test():
     summary = summarize_version(results, ["a", "b", "c", "d"])
     assert summary == {
         "version": "1.75.0.3", "at": datetime(2026, 11, 15, 10, 50, tzinfo=UTC), "tests": 4, "executed": 3,
-        "percent": 75, "passed": 1, "failed": 1, "other": 1, "launches": 2,
+        "percent": 75, "passed": 1, "failed": 1, "other": 1, "missing": 1, "launches": 2,
+        "statuses": {"a": "passed", "b": "failed", "c": "skipped"},
     }
+
+
+def test_best_version_has_the_most_passed_tests_newer_wins_a_tie():
+    from app.services.version_summary import best_version
+    results = [  # newest first
+        _row("a", "failed", "1.75.0.3", 50),
+        _row("a", "passed", "1.75.0.2", 40),
+        _row("b", "passed", "1.75.0.2", 30),
+        _row("a", "passed", "1.75.0.1", 20),
+        _row("b", "passed", "1.75.0.1", 10),
+    ]
+    best = best_version(results, ["a", "b", "c"])
+    assert (best["version"], best["passed"], best["missing"]) == ("1.75.0.2", 2, 1)
+    assert summarize_version(results, ["a"], "9.9")["executed"] == 0
 
 
 def test_summary_without_versioned_results():
@@ -45,6 +60,10 @@ def test_endpoint_answers_on_the_live_database():
         summary = results_version(db)
     assert {"version", "tests", "executed", "percent", "passed", "failed"} <= summary.keys()
     assert summary["passed"] + summary["failed"] + summary["other"] == summary["executed"] <= summary["tests"]
+    assert summary["executed"] + summary["missing"] == summary["tests"]
+    assert summary["best"] is None or summary["best"]["passed"] >= summary["passed"]
+    assert summary["versions"][0]["version"] == summary["version"]
+    assert summary["best"] is None or summary["best"]["passed"] == max(item["passed"] for item in summary["versions"])
 
 
 def test_table_rows_carry_version_of_last_run_and_last_passed_run():
