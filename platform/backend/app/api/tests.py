@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.models import LabE2eRun, LabTest, ReportLaunch, ReportResult
 from app.services.test_bindings import load_bindings
-from app.services.version_summary import version_summary
+from app.services.version_summary import annotate_table, version_summary
 from app.services.tests_catalog import results_by_test, summarize_test
 
 router = APIRouter(prefix="/api/v1/lab", tags=["tests"])
@@ -34,7 +34,10 @@ def list_tests(include_retired: bool = False, db: Session = Depends(get_db)) -> 
     rows = _tests(db, include_retired)
     history = results_by_test(db, [row.id for row in rows])
     bindings = _bindings_by_case()
-    return [summarize_test(row, history.get(row.id, []), bindings.get(row.id)) for row in rows]
+    # env_ai_dev#29: version of the last run and the last passed run of every test
+    summaries = [summarize_test(row, history.get(row.id, []), bindings.get(row.id)) for row in rows]
+    annotate_table(db, summaries, history)
+    return summaries
 
 
 @router.get("/tests/{test_id}")

@@ -67,6 +67,29 @@ def summarize_version(results: list[dict[str, Any]], test_ids: list[str]) -> dic
     }
 
 
+def result_version(item: dict[str, Any], launch_runs: dict[str, str], versions: dict[str, str]) -> str | None:
+    """Version of one history item: a report through its launch run, a live result through its own run."""
+    run_id = item.get("run_id") or launch_runs.get(item.get("launch_id") or "")
+    return versions.get(run_id) if run_id else None
+
+
+def annotate_table(db: Session, summaries: list[dict[str, Any]], history: dict[str, list[dict[str, Any]]]) -> None:
+    """Configuration version of the last run and the last passed run of every test (env_ai_dev#29)."""
+    versions = run_versions(db.execute(select(LabE2eRun.id, LabE2eRun.parent_id, LabE2eRun.stand)).tuples())
+    # a Result has keys(): dict() would read it as a mapping, so pairs go through a comprehension
+    launch_runs = {launch_id: run_id for launch_id, run_id in db.execute(
+        select(ReportLaunch.id, ReportLaunch.e2e_run_id).where(ReportLaunch.e2e_run_id.is_not(None))).tuples()}
+    for summary in summaries:
+        items = history.get(summary["id"], [])
+        if summary.get("last") and items:
+            summary["last"]["version"] = result_version(items[0], launch_runs, versions)
+        good = next((item for item in items if item["status"] in GOOD), None)
+        summary["last_passed"] = {
+            "id": good["id"], "start": good["start"], "launch": good.get("launch"),
+            "version": result_version(good, launch_runs, versions),
+        } if good else None
+
+
 def version_summary(db: Session, test_ids: list[str]) -> dict[str, Any]:
     versions = run_versions(db.execute(select(LabE2eRun.id, LabE2eRun.parent_id, LabE2eRun.stand)).tuples())
     # Result times come from the clock of the machine under test, which date-shifted chains move: order by the

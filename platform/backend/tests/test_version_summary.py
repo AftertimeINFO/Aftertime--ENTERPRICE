@@ -45,3 +45,24 @@ def test_endpoint_answers_on_the_live_database():
         summary = results_version(db)
     assert {"version", "tests", "executed", "percent", "passed", "failed"} <= summary.keys()
     assert summary["passed"] + summary["failed"] + summary["other"] == summary["executed"] <= summary["tests"]
+
+
+def test_table_rows_carry_version_of_last_run_and_last_passed_run():
+    from app.api.tests import list_tests
+    with SessionLocal() as db:
+        rows = list_tests(False, db)
+    assert rows and all("last_passed" in row for row in rows)
+    for row in rows:
+        if row["last"]:
+            assert "version" in row["last"]
+        if row["last_passed"]:
+            assert row["last_passed"]["start"] and "version" in row["last_passed"]
+    assert any(row["last"] and row["last"]["version"] for row in rows), "no row got a version"
+
+
+def test_result_version_goes_through_launch_or_own_run():
+    from app.services.version_summary import result_version
+    versions = {"suite": "1.75.0.3", "case": "1.75.0.3"}
+    assert result_version({"launch_id": "L"}, {"L": "suite"}, versions) == "1.75.0.3"
+    assert result_version({"launch_id": None, "run_id": "case"}, {}, versions) == "1.75.0.3"
+    assert result_version({"launch_id": "unknown"}, {}, versions) is None

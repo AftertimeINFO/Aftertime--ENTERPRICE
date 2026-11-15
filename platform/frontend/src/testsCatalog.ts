@@ -11,7 +11,7 @@ export const STATUS_VIEW: Record<string, { icon: string; label: string }> = {
 };
 
 export type TestFilters = { query: string; suite: string; statuses: string[]; flakyOnly: boolean };
-export type TestSort = "attention" | "name" | "recent" | "duration" | "trend" | "stability";
+export type TestSort = "attention" | "name" | "passed" | "recent" | "duration" | "trend" | "stability";
 /** A sort and its direction: ``reversed`` turns the natural order of the sort around (env_ai_dev#24). */
 export type SortState = { sort: TestSort; reversed: boolean };
 
@@ -40,10 +40,13 @@ export function trendFailures(test: Row): number {
 export function sortTests(tests: Row[], sort: TestSort, reversed = false): Row[] {
   const byName = (left: Row, right: Row) => String(left.title).localeCompare(String(right.title), "uk");
   const started = (test: Row) => (test.last?.start ? Date.parse(test.last.start) : 0);
+  const passedAt = (test: Row) => (test.last_passed?.start ? Date.parse(test.last_passed.start) : 0);
   const lasted = (test: Row) => (typeof test.last?.duration_ms === "number" ? test.last.duration_ms : -1);
   const key: (left: Row, right: Row) => number =
     sort === "name" ? () => 0
     : sort === "recent" ? (left, right) => started(right) - started(left)
+    // env_ai_dev#29: the latest successful run first; never passed - last
+    : sort === "passed" ? (left, right) => passedAt(right) - passedAt(left)
     : sort === "duration" ? (left, right) => lasted(right) - lasted(left)
     : sort === "trend" ? (left, right) => trendFailures(right) - trendFailures(left)
     : sort === "stability" ? (left, right) => (left.pass_rate ?? 2) - (right.pass_rate ?? 2)

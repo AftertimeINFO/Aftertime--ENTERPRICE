@@ -35,6 +35,16 @@ describe("the test suite", () => {
     expect(nextSort({ sort: "name", reversed: true }, "recent")).toEqual({ sort: "recent", reversed: false });
   });
 
+  it("sorts by the last successful run, never passed last (env_ai_dev#29)", () => {
+    const rows = [
+      { id: "x", title: "X", last_passed: { start: "2026-11-14T10:00:00Z", version: "1.75.0.2" } },
+      { id: "y", title: "Y", last_passed: null },
+      { id: "z", title: "Z", last_passed: { start: "2026-11-15T10:00:00Z", version: "1.75.0.3" } },
+    ];
+    expect(sortTests(rows, "passed").map((item) => item.id)).toEqual(["z", "x", "y"]);
+    expect(sortTests(rows, "passed", true).map((item) => item.id)).toEqual(["y", "x", "z"]);
+  });
+
   it("lists suites once and reads times and rates the way people say them", () => {
     expect(suitesOf(tests).map((suite) => suite.id)).toEqual(["booking", "chains", "issue"]);
     const now = Date.parse("2026-11-04T12:00:00Z");

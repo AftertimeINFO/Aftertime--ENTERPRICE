@@ -25,7 +25,7 @@ type Props = {
 };
 
 const SORTS: [TestSort, string][] = [["attention", "Спершу проблемні"], ["name", "За назвою"], ["recent", "Нещодавні"],
-  ["duration", "Найдовші"], ["trend", "Більше збоїв за останні 10"], ["stability", "Найменш стабільні"]];
+  ["passed", "Нещодавно успішні"], ["duration", "Найдовші"], ["trend", "Більше збоїв за останні 10"], ["stability", "Найменш стабільні"]];
 const SORT_STORE = "aftertime.tests-sort";
 
 function loadSort(): SortState {
@@ -199,6 +199,7 @@ export function TestsView({ selectedId, tab, onSelect, onTab, onOpenProcess, onO
               onChange={() => setChosen(allChosen ? [] : visible.map((test) => test.id))} /></span>
             <SortHeader label="Статус" sort="attention" state={order} onSort={sortBy} />
             <SortHeader label="Тест" sort="name" state={order} onSort={sortBy} />
+            <SortHeader label="Останній успішний" sort="passed" state={order} onSort={sortBy} />
             <SortHeader label="Останній запуск" sort="recent" state={order} onSort={sortBy} />
             <SortHeader label="Останні 10" sort="trend" state={order} onSort={sortBy} />
             <SortHeader label="Стабільність" sort="stability" state={order} onSort={sortBy} />
@@ -218,7 +219,8 @@ export function TestsView({ selectedId, tab, onSelect, onTab, onOpenProcess, onO
                 <small>{test.id}{test.suites?.length ? ` · ${test.suites.map((suite: Row) => suite.id).join(", ")}` : ""}{test.active ? "" : " · вилучено з набору"}</small>
                 {test.binding && <em className="tag" title="Тест прив'язано до процесу BPMN">BPMN</em>}
               </span>
-              <span>{relativeTime(test.last?.start)}{test.last ? <small>{formatDuration(test.last.duration_ms)}</small> : null}</span>
+              <span title={test.last_passed ? `Останній успішний: ${test.last_passed.launch || ""}` : "Успішного запуску ще не було"}>{test.last_passed ? relativeTime(test.last_passed.start) : "—"}{test.last_passed?.version ? <small className="run-version">{test.last_passed.version}</small> : null}</span>
+              <span>{relativeTime(test.last?.start)}{test.last ? <small>{test.last.version ? <b className="run-version">{test.last.version}</b> : null}{test.last.version ? " · " : ""}{formatDuration(test.last.duration_ms)}</small> : null}</span>
               <span><Trend statuses={test.trend} /></span>
               <span>{percent(test.pass_rate)}{test.flaky && <em className="tag warn" title="Результат змінювався кілька разів за останні запуски">нестабільний</em>}</span>
             </div>)}
