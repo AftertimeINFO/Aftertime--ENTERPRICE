@@ -26,13 +26,15 @@
 .tests-version .tv-group.latest .tv-cell:not(.on) { background: #1f190f; }
 .tests-version .tv-group.latest .tv-cell:not(.on):hover { background: #2c2416; border-color: #8a6c33; }
 .tests-version .tv-members { max-width: 170px; overflow: hidden; text-overflow: ellipsis; }
-.tests-version .tv-levels { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; flex-basis: 100%; justify-content: center; }
-.tests-version .tv-levels .tv-label { margin-right: 4px; }
-.tests-version .tv-levels button { padding: 2px 10px; border: 1px solid var(--ux-line); border-radius: 12px; background: none; color: var(--ux-muted);
-  font: inherit; font-size: 11px; cursor: pointer; }
-.tests-version .tv-levels button b { color: var(--ux-text); font-variant-numeric: tabular-nums; }
-.tests-version .tv-levels button:hover { border-color: #3d6b5c; }
-.tests-version .tv-levels button.on { border-color: var(--signal, #c8ff4d); color: var(--ux-text); background: #1b2a10; }
+/* the version as four equal slots; parts 3 and 4 toggle grouping (number <-> *) */
+.tests-version .tv-version-line { display: inline-flex; align-items: center; gap: 4px; }
+.tests-version .tv-code { display: inline-flex; align-items: baseline; color: var(--signal, #c8ff4d); font-size: 18px; font-weight: 700; line-height: 1.25; }
+.tests-version .tv-seg { display: inline-block; width: 2.1em; padding: 0; border: 1px solid transparent; border-radius: 4px; background: none;
+  color: inherit; font: inherit; font-variant-numeric: tabular-nums; text-align: center; }
+.tests-version button.tv-seg { cursor: pointer; border-bottom: 1px dashed rgba(200, 255, 77, .45); }
+.tests-version button.tv-seg:hover { border-color: rgba(200, 255, 77, .6); background: rgba(200, 255, 77, .08); }
+.tests-version button.tv-seg.star { color: var(--ux-muted); }
+.tests-version .tv-dot { width: .45em; text-align: center; color: var(--ux-muted); }
 .tests-version .tv-head, .tests-version .tv-cell { display: flex; flex-direction: column; align-items: flex-start; min-width: 104px; padding: 6px 12px;
   border: 1px solid var(--ux-line); border-radius: 6px; background: var(--ux-panel); color: var(--ux-text); font: inherit; text-align: left; }
 .tests-version .tv-head { border-color: transparent; background: none; padding-left: 6px; }
@@ -49,8 +51,9 @@
 .tests-version .missing strong { color: #e9c46a; }
 .tests-version .tv-bar { display: block; align-self: stretch; height: 3px; margin-top: 4px; border-radius: 2px; background: var(--ux-line); overflow: hidden; }
 .tests-version .tv-bar i { display: block; height: 100%; background: var(--signal, #c8ff4d); }
-.tests-version .tv-picker { position: relative; display: inline-flex; align-items: baseline; gap: 6px; padding: 0 22px 0 0; border-radius: 4px; cursor: pointer; }
-.tests-version .tv-picker i { position: absolute; right: 4px; top: 2px; color: var(--ux-muted); font-style: normal; font-size: 12px; }
+.tests-version .tv-picker { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px;
+  border: 1px solid var(--ux-line); border-radius: 4px; cursor: pointer; }
+.tests-version .tv-picker i { color: var(--ux-muted); font-style: normal; font-size: 12px; }
 .tests-version .tv-picker:hover i, .tests-version .tv-picker:focus-within i { color: var(--ux-focus); }
 .tests-version .tv-picker:focus-within { outline: 2px solid var(--ux-focus); outline-offset: 2px; }
 .tests-version .tv-picker select { position: absolute; inset: 0; width: 100%; opacity: 0; cursor: pointer; font-size: 12px; }

@@ -130,3 +130,19 @@ export function levelPattern(version: string | null | undefined, level: VersionL
   const parts = (version || "1.0.0.0").split(".");
   return level >= 4 || level >= parts.length ? parts.join(".") : `${parts.slice(0, level).join(".")}.*`;
 }
+
+/**
+ * The four parts of a version as the header draws them, one equal slot each: 1.75.0.* → 1, 75, 0, *;
+ * 1.75.* → 1, 75, *, * (env_ai_dev#29).
+ */
+export function versionSlots(version: string | null | undefined): string[] {
+  const parts = String(version || "").split(".").filter(Boolean).slice(0, 4);
+  while (parts.length < 4) parts.push("*");
+  return parts;
+}
+
+/** A click on a part of the version: a number turns into * (builds from it together), * shows the number again. */
+export function levelAfterClick(slot: number, part: string): VersionLevel {
+  const level = part === "*" ? slot + 1 : slot;
+  return Math.min(4, Math.max(2, level)) as VersionLevel;
+}

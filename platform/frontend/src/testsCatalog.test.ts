@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  filterTests, levelPattern, matchesVersionKind, nextSort, parseRoute, percent, relativeTime, routeHash, sortTests, suitesOf, trendFailures, versionOptionLabel,
+  filterTests, levelAfterClick, levelPattern, matchesVersionKind, versionSlots, nextSort, parseRoute, percent, relativeTime, routeHash, sortTests, suitesOf, trendFailures, versionOptionLabel,
 } from "./testsCatalog";
 
 const tests = [
@@ -57,6 +57,16 @@ describe("the test suite", () => {
     expect(ids("missing")).toEqual(["d"]);
     expect(versionOptionLabel({ version: "1.75.0.2", passed: 12, failed: 10, executed: 22, tests: 56, percent: 39 }, { best: true }))
       .toBe("1.75.0.2 · ✓ 12 · ✗ 10 · виконано 22/56 (39%) · найкраща");
+  });
+
+  it("draws a version in four slots and toggles grouping by a click on a part (env_ai_dev#29)", () => {
+    expect(versionSlots("1.75.0.*")).toEqual(["1", "75", "0", "*"]);
+    expect(versionSlots("1.75.*")).toEqual(["1", "75", "*", "*"]);
+    expect(versionSlots("1.75.0.3")).toEqual(["1", "75", "0", "3"]);
+    expect(levelAfterClick(3, "3")).toBe(3);
+    expect(levelAfterClick(2, "0")).toBe(2);
+    expect(levelAfterClick(3, "*")).toBe(4);
+    expect(levelAfterClick(2, "*")).toBe(3);
   });
 
   it("names grouping levels by the patterns they make (env_ai_dev#29)", () => {

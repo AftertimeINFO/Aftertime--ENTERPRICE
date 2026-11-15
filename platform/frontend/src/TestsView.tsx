@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { api, type Row } from "./api";
 import { formatDuration } from "./reports";
 import { LaunchPanel } from "./LaunchPanel";
 import { TestDetail } from "./ReportsView";
 import { isActive, runStatusLabel, standLabel } from "./e2eRun";
 import {
-  STATUS_VIEW, VERSION_KIND_LABEL, VERSION_LEVELS, filterTests, levelPattern, matchesVersionKind, nextSort, versionOptionLabel, percent, relativeTime, routeHash, sortTests, suitesOf,
+  STATUS_VIEW, VERSION_KIND_LABEL, filterTests, levelAfterClick, versionSlots, matchesVersionKind, nextSort, versionOptionLabel, percent, relativeTime, routeHash, sortTests, suitesOf,
   type SortState, type TestFilters, type TestSort, type VersionKind, type VersionLevel, type VersionPick,
 } from "./testsCatalog";
 import { EmptyState, StatusBadge, Trend } from "./ui";
@@ -63,9 +63,28 @@ const GROUP_TITLE: Record<VersionPick["group"], string> = { chosen: "Вибра�
  * One version in the header (env_ai_dev#29): the version and four blocks. Every block is a toggle filter of the
  * table (aria-pressed); the pressed one is blue. Only one block of all groups filters at a time.
  */
-function VersionGroup({ group, summary, title, note, picker, pick, onPick }: {
+/**
+ * The version as four equal slots (env_ai_dev#29). The last two are buttons: a number turns into * - builds from
+ * that part on are summed up together - and * brings the number back. Major and minor stay fixed.
+ */
+function VersionCode({ version, onLevel }: { version: string; onLevel: (level: VersionLevel) => void }) {
+  const slots = versionSlots(version);
+  return <span className="tv-code" role="group" aria-label={`Версія ${version}; частини 3 і 4 перемикають групування`}>
+    {slots.map((part, slot) => <Fragment key={slot}>
+      {slot > 0 && <span className="tv-dot" aria-hidden="true">.</span>}
+      {slot < 2
+        ? <span className="tv-seg fixed">{part}</span>
+        : <button type="button" className={`tv-seg ${part === "*" ? "star" : ""}`}
+          title={part === "*" ? "Показати цю частину версії окремо" : "Об'єднати збірки з цієї частини версії (*)"}
+          aria-label={part === "*" ? `Частина ${slot + 1}: усі; показати окремо` : `Частина ${slot + 1}: ${part}; об'єднати`}
+          onClick={() => onLevel(levelAfterClick(slot, part))}>{part}</button>}
+    </Fragment>)}
+  </span>;
+}
+
+function VersionGroup({ group, summary, title, note, picker, pick, onPick, onLevel }: {
   group: VersionPick["group"]; summary: Row; title?: string; note?: string; picker?: ReactNode;
-  pick: VersionPick | null; onPick: (pick: VersionPick | null) => void;
+  pick: VersionPick | null; onPick: (pick: VersionPick | null) => void; onLevel: (level: VersionLevel) => void;
 }) {
   const executed = Number(summary.executed) || 0;
   const tests = Number(summary.tests) || 0;
@@ -84,7 +103,7 @@ function VersionGroup({ group, summary, title, note, picker, pick, onPick }: {
   return <section className={`tv-group ${group}`} aria-label={`${title || GROUP_TITLE[group]}: версія ${summary.version}`}>
     <div className="tv-head">
       <span className="tv-label">{title || GROUP_TITLE[group]}</span>
-      {picker || <strong className="tv-version">{summary.version}</strong>}
+      <span className="tv-version-line"><VersionCode version={summary.version} onLevel={onLevel} />{picker}</span>
       <small>{note || `${relativeTime(summary.at)} · запусків: ${summary.launches}`}</small>
       {(summary.members || []).length > 1 && <small className="tv-members" title={`Збірки в групі: ${summary.members.join(", ")}`}>
         збірки: {summary.members.join(", ")}</small>}
@@ -110,21 +129,13 @@ function VersionSummary({ summary, chosen, onChoose, pick, onPick, level, onLeve
 }) {
   if (!summary) return null;
   if (!summary.version) return <div className="tests-version muted">Протестованої версії ще немає</div>;
-  // the switch names its levels by the patterns they make of the newest build: 1.75.0.* / 1.75.* / 1.75.0.3
-  const newest: string | undefined = summary.versions?.[0]?.members?.[0] || summary.version;
-  const levels = <div className="tv-levels" role="radiogroup" aria-label="Групування версій">
-    <span className="tv-label">Групувати версії</span>
-    {VERSION_LEVELS.map((item) => <button key={item.level} type="button" role="radio" aria-checked={level === item.level}
-      className={level === item.level ? "on" : ""} title={item.hint} onClick={() => onLevel(item.level)}>
-      <b>{levelPattern(newest, item.level)}</b> {item.name.toLowerCase()}
-    </button>)}
-  </div>;
   const versions: Row[] = summary.versions || [];
   const best: Row | null = summary.best?.version ? summary.best : null;
   const left = chosen || best;
-  // the closed picker shows only the version; the native list (keyboard, screen readers) lies over it, transparent
+  // the parts of the version switch grouping, so the list opens from its own ▾ next to them; the native select
+  // (keyboard, screen readers) lies over the ▾, transparent
   const picker = versions.length > 1 && left ? <span className="tv-picker" title="Вибрати іншу версію">
-    <strong className="tv-version">{left.version}</strong><i aria-hidden="true">▾</i>
+    <i aria-hidden="true">▾</i>
     <select aria-label="Версія для порівняння" value={left.version}
       onChange={(event) => onChoose(event.target.value === best?.version ? null : event.target.value)}>
       {versions.map((item) => <option key={item.version} value={item.version}>
@@ -133,12 +144,11 @@ function VersionSummary({ summary, chosen, onChoose, pick, onPick, level, onLeve
     </select>
   </span> : undefined;
   const isBest = left?.version === best?.version;
-  return <div className="tests-version">
-    {levels}
-    {left && <VersionGroup group="chosen" summary={left} picker={picker} pick={pick} onPick={onPick}
+  return <div className="tests-version" data-level={level}>
+    {left && <VersionGroup group="chosen" summary={left} picker={picker} pick={pick} onPick={onPick} onLevel={onLevel}
       title={isBest ? "Найбільше успішних" : "Вибрана версія"}
       note={left.version === summary.version ? `збігається з останньою · ${relativeTime(left.at)}` : undefined} />}
-    <VersionGroup group="latest" summary={summary} pick={pick} onPick={onPick} />
+    <VersionGroup group="latest" summary={summary} pick={pick} onPick={onPick} onLevel={onLevel} />
   </div>;
 }
 
