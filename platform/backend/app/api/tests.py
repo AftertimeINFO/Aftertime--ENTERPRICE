@@ -102,9 +102,12 @@ def results_summary(days: int = 14, db: Session = Depends(get_db)) -> dict[str, 
 
 
 @router.get("/results/version")
-def results_version(db: Session = Depends(get_db)) -> dict[str, Any]:
-    """Last tested configuration version: share of active tests run on it, passed and failed (env_ai_dev#29)."""
-    return version_summary(db, [row.id for row in _tests(db, False)])
+def results_version(level: int = 4, db: Session = Depends(get_db)) -> dict[str, Any]:
+    """Last tested configuration version: share of active tests run on it, passed and failed (env_ai_dev#29).
+
+    ``level``: 4 - exact versions, 3 - fixes of a version together (1.75.0.*), 2 - a minor line together (1.75.*).
+    """
+    return version_summary(db, [row.id for row in _tests(db, False)], min(4, max(2, level)))
 
 
 @router.get("/results/matrix")

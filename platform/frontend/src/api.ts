@@ -63,7 +63,7 @@ export const api = {
   test: (id: string) => request<Row>(`/lab/tests/${encodeURIComponent(id)}`),
   resultsSummary: () => request<Row>("/lab/results/summary"),
   // env_ai_dev#29: last tested configuration version and how the suite ended on it
-  resultsVersion: () => request<Row>("/lab/results/version"),
+  resultsVersion: (level = 4) => request<Row>(`/lab/results/version?level=${level}`),
   resultsMatrix: (suite = "") => request<Row>(`/lab/results/matrix${suite ? `?suite=${encodeURIComponent(suite)}` : ""}`),
   centerState: () => request<Row>("/lab/center/state"),
   centerRuns: () => request<Row[]>("/lab/center/runs"),

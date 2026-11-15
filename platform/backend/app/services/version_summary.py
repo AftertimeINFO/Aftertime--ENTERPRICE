@@ -33,6 +33,17 @@ def run_versions(runs: Iterable[tuple[str, str | None, dict | None]]) -> dict[st
     return {run_id: found for run_id in rows if (found := version(run_id))}
 
 
+def version_key(version: str | None, level: int = 4) -> str | None:
+    """A version at a level of detail: 4 - as is (1.75.0.3), 3 - fixes together (1.75.0.*), 2 - the minor line
+    together (1.75.*).  A version shorter than the level stays as is."""
+    if not version:
+        return None
+    parts = version.split(".")
+    if level >= len(parts) or level >= 4:
+        return version
+    return ".".join(parts[:max(1, level)]) + ".*"
+
+
 def summarize_version(results: list[dict[str, Any]], test_ids: list[str], version: str | None = None) -> dict[str, Any]:
     """``results``: rows with ``full_name``, ``status``, ``start``, ``version``, ``launch_id``, newest first.
 
@@ -110,7 +121,7 @@ def annotate_table(db: Session, summaries: list[dict[str, Any]], history: dict[s
         } if good else None
 
 
-def version_summary(db: Session, test_ids: list[str]) -> dict[str, Any]:
+def version_summary(db: Session, test_ids: list[str], level: int = 4) -> dict[str, Any]:
     versions = run_versions(db.execute(select(LabE2eRun.id, LabE2eRun.parent_id, LabE2eRun.stand)).tuples())
     # Result times come from the clock of the machine under test, which date-shifted chains move: order by the
     # real time of the run, then by the result inside it.
@@ -121,12 +132,16 @@ def version_summary(db: Session, test_ids: list[str]) -> dict[str, Any]:
         .join(LabE2eRun, LabE2eRun.id == ReportLaunch.e2e_run_id)
         .order_by(LabE2eRun.created_at.desc(), ReportResult.start.desc().nulls_last())
     ).mappings()
-    results = [{**row, "version": versions.get(row["e2e_run_id"])} for row in rows]
+    # ``level`` groups versions (version_key): the summary of 1.75.0.* takes the latest result of a test on any 1.75.0.x
+    results = [{**row, "exact": versions.get(row["e2e_run_id"]),
+                "version": version_key(versions.get(row["e2e_run_id"]), level)} for row in rows]
     versions = all_versions(results, test_ids)
     summary = versions[0] if versions else summarize_version(results, test_ids)
     for item in versions:
+        # exact versions inside a group, newest first
+        item["members"] = list(dict.fromkeys(row["exact"] for row in results if row["version"] == item["version"]))
         if isinstance(item["at"], datetime) and item["at"].tzinfo is None:
             item["at"] = item["at"].replace(tzinfo=UTC)
     # the last tested version stays at the top level (env_ai_dev#29); ``best`` - the version with most passed;
     # ``versions`` - every tested version, newest first, for the picker
-    return {**summary, "best": pick_best(versions), "versions": versions}
+    return {**summary, "level": level, "best": pick_best(versions), "versions": versions}

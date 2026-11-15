@@ -57,7 +57,7 @@ def test_summary_without_versioned_results():
 
 def test_endpoint_answers_on_the_live_database():
     with SessionLocal() as db:
-        summary = results_version(db)
+        summary = results_version(db=db)
     assert {"version", "tests", "executed", "percent", "passed", "failed"} <= summary.keys()
     assert summary["passed"] + summary["failed"] + summary["other"] == summary["executed"] <= summary["tests"]
     assert summary["executed"] + summary["missing"] == summary["tests"]
@@ -85,3 +85,29 @@ def test_result_version_goes_through_launch_or_own_run():
     assert result_version({"launch_id": "L"}, {"L": "suite"}, versions) == "1.75.0.3"
     assert result_version({"launch_id": None, "run_id": "case"}, {}, versions) == "1.75.0.3"
     assert result_version({"launch_id": "unknown"}, {}, versions) is None
+
+
+def test_version_key_groups_fixes_or_minor_lines():
+    from app.services.version_summary import version_key
+    assert version_key("1.75.0.3", 4) == "1.75.0.3"
+    assert version_key("1.75.0.3", 3) == "1.75.0.*"
+    assert version_key("1.75.2.1", 2) == "1.75.*"
+    assert version_key("1.75", 3) == "1.75" and version_key(None, 3) is None
+
+
+def test_grouped_summary_takes_the_latest_result_on_any_version_of_the_group():
+    results = [  # newest first, already keyed at level 3
+        {**_row("a", "failed", "1.75.0.*", 50), "exact": "1.75.0.3"},
+        {**_row("b", "passed", "1.75.0.*", 40), "exact": "1.75.0.2"},
+        {**_row("a", "passed", "1.75.0.*", 30), "exact": "1.75.0.2"},
+    ]
+    summary = summarize_version(results, ["a", "b"])
+    assert (summary["version"], summary["passed"], summary["failed"]) == ("1.75.0.*", 1, 1)
+
+
+def test_endpoint_levels_on_the_live_database():
+    with SessionLocal() as db:
+        exact, fixes, minor = (results_version(level=level, db=db) for level in (4, 3, 2))
+    assert fixes["level"] == 3 and fixes["version"].endswith(".*") and fixes["versions"][0]["members"]
+    assert fixes["executed"] >= exact["executed"] and minor["executed"] >= fixes["executed"]
+    assert len(minor["versions"]) <= len(fixes["versions"]) <= len(exact["versions"])

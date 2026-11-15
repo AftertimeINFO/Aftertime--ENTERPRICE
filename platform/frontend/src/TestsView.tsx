@@ -5,8 +5,8 @@ import { LaunchPanel } from "./LaunchPanel";
 import { TestDetail } from "./ReportsView";
 import { isActive, runStatusLabel, standLabel } from "./e2eRun";
 import {
-  STATUS_VIEW, VERSION_KIND_LABEL, filterTests, matchesVersionKind, nextSort, versionOptionLabel, percent, relativeTime, routeHash, sortTests, suitesOf,
-  type SortState, type TestFilters, type TestSort, type VersionKind, type VersionPick,
+  STATUS_VIEW, VERSION_KIND_LABEL, VERSION_LEVELS, filterTests, levelPattern, matchesVersionKind, nextSort, versionOptionLabel, percent, relativeTime, routeHash, sortTests, suitesOf,
+  type SortState, type TestFilters, type TestSort, type VersionKind, type VersionLevel, type VersionPick,
 } from "./testsCatalog";
 import { EmptyState, StatusBadge, Trend } from "./ui";
 
@@ -47,6 +47,16 @@ function SortHeader({ label, sort, state, onSort }: { label: string; sort: TestS
   </span>;
 }
 
+const LEVEL_STORE = "aftertime.tests-version-level";
+
+function loadVersionLevel(): VersionLevel {
+  try {
+    const stored = Number(window.localStorage.getItem(LEVEL_STORE));
+    if (stored === 2 || stored === 3 || stored === 4) return stored;
+  } catch { /* no storage: the default */ }
+  return 3;
+}
+
 const GROUP_TITLE: Record<VersionPick["group"], string> = { chosen: "Вибрана версія", latest: "Остання протестована" };
 
 /**
@@ -76,6 +86,8 @@ function VersionGroup({ group, summary, title, note, picker, pick, onPick }: {
       <span className="tv-label">{title || GROUP_TITLE[group]}</span>
       {picker || <strong className="tv-version">{summary.version}</strong>}
       <small>{note || `${relativeTime(summary.at)} · запусків: ${summary.launches}`}</small>
+      {(summary.members || []).length > 1 && <small className="tv-members" title={`Збірки в групі: ${summary.members.join(", ")}`}>
+        збірки: {summary.members.join(", ")}</small>}
     </div>
     {block("executed", `${summary.percent}%`, `${executed} з ${tests} тестів`, "Активні тести, що мають результат на цій версії",
       <span className="tv-bar" aria-hidden="true"><i style={{ width: `${Math.min(100, Number(summary.percent) || 0)}%` }} /></span>)}
@@ -91,12 +103,22 @@ function VersionGroup({ group, summary, title, note, picker, pick, onPick }: {
  * Left: a version picked in the list, the best one (most passed tests) by default; right: the last tested one
  * (env_ai_dev#29). Every line of the list carries the result of its version in short.
  */
-function VersionSummary({ summary, chosen, onChoose, pick, onPick }: {
+function VersionSummary({ summary, chosen, onChoose, pick, onPick, level, onLevel }: {
   summary: Row | null; chosen: Row | null; onChoose: (version: string | null) => void;
   pick: VersionPick | null; onPick: (pick: VersionPick | null) => void;
+  level: VersionLevel; onLevel: (level: VersionLevel) => void;
 }) {
   if (!summary) return null;
   if (!summary.version) return <div className="tests-version muted">Протестованої версії ще немає</div>;
+  // the switch names its levels by the patterns they make of the newest build: 1.75.0.* / 1.75.* / 1.75.0.3
+  const newest: string | undefined = summary.versions?.[0]?.members?.[0] || summary.version;
+  const levels = <div className="tv-levels" role="radiogroup" aria-label="Групування версій">
+    <span className="tv-label">Групувати версії</span>
+    {VERSION_LEVELS.map((item) => <button key={item.level} type="button" role="radio" aria-checked={level === item.level}
+      className={level === item.level ? "on" : ""} title={item.hint} onClick={() => onLevel(item.level)}>
+      <b>{levelPattern(newest, item.level)}</b> {item.name.toLowerCase()}
+    </button>)}
+  </div>;
   const versions: Row[] = summary.versions || [];
   const best: Row | null = summary.best?.version ? summary.best : null;
   const left = chosen || best;
@@ -112,6 +134,7 @@ function VersionSummary({ summary, chosen, onChoose, pick, onPick }: {
   </span> : undefined;
   const isBest = left?.version === best?.version;
   return <div className="tests-version">
+    {levels}
     {left && <VersionGroup group="chosen" summary={left} picker={picker} pick={pick} onPick={onPick}
       title={isBest ? "Найбільше успішних" : "Вибрана версія"}
       note={left.version === summary.version ? `збігається з останньою · ${relativeTime(left.at)}` : undefined} />}
@@ -135,6 +158,14 @@ export function TestsView({ selectedId, tab, onSelect, onTab, onOpenProcess, onO
   const [versionPick, setVersionPick] = useState<VersionPick | null>(null);
   // the version of the left group; null - the best one
   const [chosenVersion, setChosenVersion] = useState<string | null>(null);
+  // how versions are grouped (1.75.0.* by default), kept for the viewer; another level resets the choice and the filter
+  const [versionLevel, setVersionLevel] = useState<VersionLevel>(loadVersionLevel);
+  const changeLevel = (level: VersionLevel) => {
+    setVersionLevel(level);
+    setChosenVersion(null);
+    setVersionPick(null);
+    try { window.localStorage.setItem(LEVEL_STORE, String(level)); } catch { /* not kept: fine */ }
+  };
   const chosenSummary: Row | null = chosenVersion ? (version?.versions || []).find((item: Row) => item.version === chosenVersion) || null : null;
   useEffect(() => {
     if (!versionPick) return;
@@ -153,8 +184,8 @@ export function TestsView({ selectedId, tab, onSelect, onTab, onOpenProcess, onO
       onError(String(error));
     }
     // env_ai_dev#29: a missing summary must not break the list
-    api.resultsVersion().then(setVersion, () => setVersion(null));
-  }, [retired, onError]);
+    api.resultsVersion(versionLevel).then(setVersion, () => setVersion(null));
+  }, [retired, onError, versionLevel]);
   useEffect(() => {
     load();
     const timer = window.setInterval(load, 30_000);
@@ -216,7 +247,8 @@ export function TestsView({ selectedId, tab, onSelect, onTab, onOpenProcess, onO
         <h2>Тести</h2>
         <p>{tests ? `${tests.length} тестів у наборі · ${suites.length} наборів` : "Завантаження…"}{runBlocked ? ` · ${runBlocked}` : ""}</p>
       </div>
-      <VersionSummary summary={version} chosen={chosenSummary} onChoose={setChosenVersion} pick={versionPick} onPick={setVersionPick} />
+      <VersionSummary summary={version} chosen={chosenSummary} onChoose={setChosenVersion} pick={versionPick} onPick={setVersionPick}
+        level={versionLevel} onLevel={changeLevel} />
       <nav className="ux-tabs" role="tablist">
         <button role="tab" aria-selected={tab !== "launch"} className={tab !== "launch" ? "active" : ""} onClick={() => onTab("list")}>Перелік</button>
         <button role="tab" aria-selected={tab === "launch"} className={tab === "launch" ? "active" : ""} onClick={() => onTab("launch")}>Запуск і черга</button>

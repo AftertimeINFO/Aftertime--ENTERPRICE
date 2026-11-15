@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  filterTests, matchesVersionKind, nextSort, parseRoute, percent, relativeTime, routeHash, sortTests, suitesOf, trendFailures, versionOptionLabel,
+  filterTests, levelPattern, matchesVersionKind, nextSort, parseRoute, percent, relativeTime, routeHash, sortTests, suitesOf, trendFailures, versionOptionLabel,
 } from "./testsCatalog";
 
 const tests = [
@@ -57,6 +57,14 @@ describe("the test suite", () => {
     expect(ids("missing")).toEqual(["d"]);
     expect(versionOptionLabel({ version: "1.75.0.2", passed: 12, failed: 10, executed: 22, tests: 56, percent: 39 }, { best: true }))
       .toBe("1.75.0.2 · ✓ 12 · ✗ 10 · виконано 22/56 (39%) · найкраща");
+  });
+
+  it("names grouping levels by the patterns they make (env_ai_dev#29)", () => {
+    expect(levelPattern("1.75.0.3", 3)).toBe("1.75.0.*");
+    expect(levelPattern("1.75.0.3", 2)).toBe("1.75.*");
+    expect(levelPattern("1.75.0.3", 4)).toBe("1.75.0.3");
+    expect(versionOptionLabel({ version: "1.75.0.*", members: ["1.75.0.3", "1.75.0.2"], passed: 17, failed: 5, executed: 22, tests: 56, percent: 39 }))
+      .toBe("1.75.0.* (2 збірки) · ✓ 17 · ✗ 5 · виконано 22/56 (39%)");
   });
 
   it("lists suites once and reads times and rates the way people say them", () => {

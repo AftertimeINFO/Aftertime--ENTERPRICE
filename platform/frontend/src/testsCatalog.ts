@@ -100,7 +100,9 @@ export type VersionPick = { group: "chosen" | "latest"; kind: VersionKind };
 /** A line of the version picker: the version and its result in short (env_ai_dev#29). */
 export function versionOptionLabel(item: Row, marks: { best?: boolean; latest?: boolean } = {}): string {
   const tags = [marks.best ? "найкраща" : "", marks.latest ? "остання" : ""].filter(Boolean).join(", ");
-  return `${item.version} · ✓ ${item.passed} · ✗ ${item.failed} · виконано ${item.executed}/${item.tests} (${item.percent}%)${tags ? ` · ${tags}` : ""}`;
+  const members: string[] = item.members || [];
+  const grouped = members.length > 1 ? ` (${members.length} збірки)` : "";
+  return `${item.version}${grouped} · ✓ ${item.passed} · ✗ ${item.failed} · виконано ${item.executed}/${item.tests} (${item.percent}%)${tags ? ` · ${tags}` : ""}`;
 }
 export const VERSION_KIND_LABEL: Record<VersionKind, string> = {
   executed: "Виконані", passed: "Успішні", failed: "Провальні", missing: "Не виконані",
@@ -113,4 +115,18 @@ export function matchesVersionKind(test: Row, statuses: Record<string, string>, 
   if (kind === "executed") return status !== undefined;
   if (kind === "passed") return status === "passed";
   return status === "failed" || status === "broken";
+}
+
+/** How versions are grouped in the header (env_ai_dev#29): 4 - exact, 3 - fixes together, 2 - the minor line together. */
+export type VersionLevel = 2 | 3 | 4;
+export const VERSION_LEVELS: { level: VersionLevel; name: string; hint: string }[] = [
+  { level: 3, name: "Фікси разом", hint: "Усі фікси однієї версії - одна група: останній результат тесту на будь-якій з них" },
+  { level: 2, name: "Мінорні разом", hint: "Уся лінія мажорної версії - одна група: мінорні версії й фікси разом" },
+  { level: 4, name: "Точна", hint: "Кожна збірка окремо" },
+];
+
+/** The pattern a level makes of a version, as the switch shows it: 1.75.0.3 → 1.75.0.* (3), 1.75.* (2). */
+export function levelPattern(version: string | null | undefined, level: VersionLevel): string {
+  const parts = (version || "1.0.0.0").split(".");
+  return level >= 4 || level >= parts.length ? parts.join(".") : `${parts.slice(0, level).join(".")}.*`;
 }
